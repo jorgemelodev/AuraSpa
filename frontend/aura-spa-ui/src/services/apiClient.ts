@@ -15,9 +15,15 @@ apiClient.interceptors.response.use(
   (res) => res,
   (error) => {
     if (error.response?.status === 401) {
+      const habiaSesion = !!localStorage.getItem('aura_token');
       localStorage.removeItem('aura_token');
       localStorage.removeItem('aura_user');
-      window.location.href = '/login';
+      // Solo forzar redirección si había una sesión activa que expiró/se invalidó.
+      // Un 401 de login o registro con credenciales incorrectas no debe recargar la página.
+      if (habiaSesion && window.location.pathname !== '/login') {
+        window.alert('Tu sesión ha expirado. Por favor, inicia sesión nuevamente. Si estabas llenando un formulario, es posible que el progreso no se haya guardado.');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

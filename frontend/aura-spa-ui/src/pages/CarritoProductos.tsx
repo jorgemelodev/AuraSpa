@@ -32,6 +32,7 @@ const CarritoProductos: React.FC = () => {
   }, []);
   const [reservado,  setReservado]  = useState(false);
   const [procesando, setProcesando] = useState(false);
+  const [confirmModal, setConfirmModal] = useState(false);
   const [notas,      setNotas]      = useState('');
   const [carritoSnapshot, setCarritoSnapshot] = useState<ProductoItem[]>([]);
   const [totalSnapshot,   setTotalSnapshot]   = useState(0);
@@ -394,7 +395,7 @@ const CarritoProductos: React.FC = () => {
                   <span>Total</span>
                   <span>RD$ {(total+itbis).toLocaleString('es-DO',{minimumFractionDigits:2})}</span>
                 </div>
-                <button onClick={reservar} className="btn-AuraSpa" disabled={procesando}
+                <button onClick={()=>setConfirmModal(true)} className="btn-AuraSpa" disabled={procesando||carrito.length===0}
                   style={{ width:'100%', padding:'13px', fontSize:'0.95rem' }}>
                   {procesando ? 'Procesando...' : 'Confirmar reserva'}
                 </button>
@@ -406,6 +407,41 @@ const CarritoProductos: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de confirmación */}
+      {confirmModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'20px' }}>
+          <div className="card-aura" style={{ maxWidth:'420px', width:'100%', padding:'40px', borderRadius:'25px' }}>
+            <h4 style={{ color:'var(--aura-navy)', fontWeight:'bold', marginBottom:'8px', textAlign:'center' }}>Confirmar reserva</h4>
+            <p style={{ color:'#888', fontSize:'0.85rem', marginBottom:'20px', textAlign:'center' }}>Revisa el resumen antes de confirmar.</p>
+            <div style={{ background:'#f8f6ff', borderRadius:'16px', padding:'18px', marginBottom:'25px' }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:'8px', marginBottom:'14px' }}>
+                {carrito.map(item => (
+                  <div key={item.id} style={{ display:'flex', justifyContent:'space-between', fontSize:'0.85rem' }}>
+                    <span style={{ color:'var(--aura-navy)' }}>{item.cantidad} × {item.nombre}</span>
+                    <strong style={{ color:'var(--aura-navy)' }}>RD$ {(item.precio*item.cantidad).toLocaleString('es-DO',{minimumFractionDigits:2})}</strong>
+                  </div>
+                ))}
+              </div>
+              <hr style={{ border:'none', borderTop:'1px solid #e4defa', margin:'10px 0' }}/>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.85rem', marginBottom:'6px' }}>
+                <span style={{ color:'#888' }}>ITBIS (18%)</span>
+                <span>RD$ {itbis.toLocaleString('es-DO',{minimumFractionDigits:2})}</span>
+              </div>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.95rem', fontWeight:'bold' }}>
+                <span style={{ color:'var(--aura-navy)' }}>Total</span>
+                <span style={{ color:'var(--aura-navy)' }}>RD$ {(total+itbis).toLocaleString('es-DO',{minimumFractionDigits:2})}</span>
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:'10px' }}>
+              <button onClick={()=>{setConfirmModal(false); reservar();}} className="btn-AuraSpa" style={{ flex:1, padding:'12px' }} disabled={procesando}>
+                {procesando ? 'Procesando...' : 'Confirmar reserva'}
+              </button>
+              <button onClick={()=>setConfirmModal(false)} className="btn-outline-aura" style={{ flex:1, padding:'12px' }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

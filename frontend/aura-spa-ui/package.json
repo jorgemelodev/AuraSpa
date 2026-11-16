@@ -10,10 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@microsoft/signalr": "^8.0.17",
+    "@vladmandic/face-api": "^1.7.15",
     "axios": "^1.16.1",
     "framer-motion": "^12.40.0",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.17.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.16.0",

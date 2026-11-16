@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShoppingCart, Sparkles, Bell } from 'lucide-react';
+import { ShoppingCart, Bell } from 'lucide-react';
 import apiClient from '../services/apiClient';
-import Aurora from './Aurora';
 // cart count
 
 
@@ -32,11 +31,10 @@ const Navbar: React.FC = () => {
   const dashboardRuta = esStaff ? '/dashboard/staff' : '/dashboard/client';
 
   return (
-    <>
       <nav className="navbar-aura shadow-sm">
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%' }}>
-          <Link to="/" style={{ textDecoration:'none', color:'var(--aura-navy)', fontSize:'1.5rem', fontWeight:'bold' }}>
-            AURA <span style={{ color:'var(--aura-lavender)' }}>Spa</span>
+          <Link to="/" style={{ textDecoration:'none', display:'inline-flex', alignItems:'center' }}>
+            <img src="/Logo_sin_letras.png" height="40" alt="AuraSpa" />
           </Link>
 
           <div style={{ display:'flex', alignItems:'center', gap:'15px' }}>
@@ -71,7 +69,7 @@ const Navbar: React.FC = () => {
                   className="btn-outline-aura"
                   style={{ padding:'5px 15px', fontSize:'0.8rem', borderRadius:'25px', textDecoration:'none', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:'6px', height:'31px', boxSizing:'border-box' }}
                 >
-                  <Sparkles size={14} /> Servicios
+                  Servicios
                 </Link>
 
                 {/* Carrito — solo clientes */}
@@ -140,7 +138,7 @@ const Navbar: React.FC = () => {
                   className="btn-outline-aura"
                   style={{ padding:'5px 15px', fontSize:'0.8rem', borderRadius:'25px', textDecoration:'none', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:'6px', height:'31px', boxSizing:'border-box' }}
                 >
-                  <Sparkles size={14} /> Servicios
+                  Servicios
                 </Link>
                 <Link to="/login" className="nav-link-aura">Entrar</Link>
                 <Link to="/registro" className="btn-AuraSpa" style={{ padding:'8px 25px', fontSize:'0.9rem' }}>Unirse</Link>
@@ -149,8 +147,6 @@ const Navbar: React.FC = () => {
           </div>
         </div>
       </nav>
-      <Aurora />
-    </>
   );
 };
 

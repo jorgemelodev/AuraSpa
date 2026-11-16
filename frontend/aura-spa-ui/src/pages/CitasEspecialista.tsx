@@ -49,7 +49,9 @@ const CitasEspecialista: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const fecha = hoy.toISOString().split('T')[0];
+      // Fecha local (no UTC) — toISOString() desfasa el día en horas de la noche en husos UTC-N
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const fecha = `${hoy.getFullYear()}-${pad(hoy.getMonth() + 1)}-${pad(hoy.getDate())}`;
       const res = await apiClient.get(`/api/citas/mis-citas-empleado?fecha=${fecha}`);
       const citasMapeadas = res.data.map((c: any) => ({
         idCita: c.idCita,
@@ -108,7 +110,7 @@ const CitasEspecialista: React.FC = () => {
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button onClick={fetchCitas} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>↻ Actualizar</button>
-          <button onClick={() => navigate('/dashboard/staff')} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
+          <button onClick={() => navigate(-1)} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
         </div>
       </div>
 

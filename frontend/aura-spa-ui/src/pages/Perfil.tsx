@@ -1,7 +1,9 @@
+import RegistroRostro from '../components/aurora/RegistroRostro';
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { User, Lock, Bell, ShieldCheck, ChevronRight, CheckCircle, Eye, EyeOff, Loader2, Save } from 'lucide-react';
+import { User, Lock, Bell, ShieldCheck, ChevronRight, CheckCircle, Eye, EyeOff, Loader2, Save, AlertTriangle } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import apiClient from '../services/apiClient';
 
 const soloLetras = (v: string) => v.replace(/[^a-záéíóúñüA-ZÁÉÍÓÚÑÜ\s'-]/g, '');
@@ -9,9 +11,13 @@ const soloNums9  = (v: string) => v.replace(/\D/g, '').slice(0, 9);
 
 const Perfil: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, login, token } = useAuth();
 
-  const [seccion, setSeccion] = useState<'perfil'|'seguridad'|'notificaciones'>('perfil');
+  const forzarCambioPassword = !!(location.state as any)?.forzarCambioPassword || !!user?.contrasenaProvisional;
+  const esCuentaAdministrada = user?.perfil === 'Admin' || user?.perfil === 'Cajero' || user?.perfil === 'Especialista';
+
+  const [seccion, setSeccion] = useState<'perfil'|'seguridad'|'dos-fa'|'notificaciones'>(forzarCambioPassword ? 'seguridad' : 'perfil');
 
   const [nombre,    setNombre]    = useState(user?.nombre   ?? '');
   const [apellido,  setApellido]  = useState(user?.apellido ?? '');
@@ -59,6 +65,7 @@ const Perfil: React.FC = () => {
       await apiClient.put('/api/auth/cambiar-password', { passwordActual: actual, passwordNueva: nueva });
       setPassOk(true);
       setActual(''); setNueva(''); setConfirmar('');
+      if (user && token) login(token, { ...user, contrasenaProvisional: false });
       setTimeout(() => setPassOk(false), 4000);
     } catch (err: any) {
       const msg = err.response?.data;
@@ -77,14 +84,42 @@ const Perfil: React.FC = () => {
   };
 
   const [activo2FA, setActivo2FA] = useState(false);
-  const [clave2FA,  setClave2FA]  = useState('');
+  const [qrUrl2FA,  setQrUrl2FA]  = useState('');
+  const [cargando2FA, setCargando2FA] = useState(false);
+  const [error2FA, setError2FA] = useState('');
 
-  const activar2FA = () => {
-    // Simulación: generar clave secreta
-    const clave = 'AURA' + Math.random().toString(36).slice(2,8).toUpperCase() + '2026';
-    setClave2FA(clave);
-    setActivo2FA(true);
-    alert(`2FA activado. Clave secreta: ${clave}\nEn producción, escanea el QR con Google Authenticator.`);
+  // Carga el estado real desde la BD — no depende del estado local, que se perdía al recargar/reloguear
+  useEffect(() => {
+    apiClient.get('/api/auth/perfil').then(res => {
+      setActivo2FA(!!res.data.dobleFactorActivo);
+    }).catch(() => {});
+  }, []);
+
+  const activar2FA = async () => {
+    setCargando2FA(true); setError2FA('');
+    try {
+      const setupRes = await apiClient.get('/api/auth/2fa/setup');
+      setQrUrl2FA(setupRes.data.url);
+      await apiClient.put('/api/auth/2fa/activar', { activo: true });
+      setActivo2FA(true);
+    } catch (err: any) {
+      setError2FA(err.response?.data || 'No se pudo activar el 2FA.');
+    } finally {
+      setCargando2FA(false);
+    }
+  };
+
+  const desactivar2FA = async () => {
+    setCargando2FA(true); setError2FA('');
+    try {
+      await apiClient.put('/api/auth/2fa/activar', { activo: false });
+      setActivo2FA(false);
+      setQrUrl2FA('');
+    } catch {
+      setError2FA('No se pudo desactivar el 2FA.');
+    } finally {
+      setCargando2FA(false);
+    }
   };
 
   const menu = [
@@ -96,6 +131,21 @@ const Perfil: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--aura-beige)' }}>
+
+      {/* Banner de contraseña provisional */}
+      {user?.contrasenaProvisional && (
+        <div style={{ background:'#fffbeb', borderBottom:'1px solid #fcd34d', padding:'14px 20px', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px', flexWrap:'wrap' }}>
+          <AlertTriangle size={18} color="#92400e" />
+          <span style={{ color:'#92400e', fontWeight:'600', fontSize:'0.88rem' }}>
+            Estás usando una contraseña provisional. Por seguridad debes cambiarla ahora.
+          </span>
+          {seccion !== 'seguridad' && (
+            <button onClick={() => setSeccion('seguridad')} style={{ background:'#92400e', color:'white', border:'none', borderRadius:'20px', padding:'6px 16px', cursor:'pointer', fontSize:'0.82rem', fontWeight:'600' }}>
+              Cambiar contraseña
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Modal confirmar guardar */}
       {confirmGuardar && (
@@ -152,7 +202,9 @@ const Perfil: React.FC = () => {
               <div className="card-aura" style={{ padding: '35px' }}>
                 <h3 style={{ color: 'var(--aura-navy)', fontWeight: 'bold', marginBottom: '6px' }}>Mis datos</h3>
                 <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '25px' }}>
-                  Puedes editar tu nombre, apellido, teléfono y correo cuando quieras.
+                  {esCuentaAdministrada
+                    ? 'Los datos de esta cuenta son administrados por el sistema.'
+                    : 'Puedes editar tu nombre, apellido, teléfono y correo cuando quieras.'}
                 </p>
 
                 {exito && (
@@ -169,33 +221,35 @@ const Perfil: React.FC = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                   <div>
                     <label style={lS}>Nombre</label>
-                    <input type="text" value={nombre}
+                    <input type="text" value={nombre} disabled={esCuentaAdministrada}
                       onChange={e => setNombre(soloLetras(e.target.value))}
-                      style={iS} />
+                      style={esCuentaAdministrada ? { ...iS, background: '#f0f0f0', color: '#888', cursor: 'not-allowed' } : iS} />
                   </div>
                   <div>
                     <label style={lS}>Apellido</label>
-                    <input type="text" value={apellido}
+                    <input type="text" value={apellido} disabled={esCuentaAdministrada}
                       onChange={e => setApellido(soloLetras(e.target.value))}
-                      style={iS} />
+                      style={esCuentaAdministrada ? { ...iS, background: '#f0f0f0', color: '#888', cursor: 'not-allowed' } : iS} />
                   </div>
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>
                   <label style={lS}>Teléfono</label>
-                  <input type="tel" value={telefono}
+                  <input type="tel" value={telefono} disabled={esCuentaAdministrada}
                     onChange={e => setTelefono(soloNums9(e.target.value))}
-                    placeholder="8091234567" maxLength={9} style={iS} />
+                    placeholder="8091234567" maxLength={9} style={esCuentaAdministrada ? { ...iS, background: '#f0f0f0', color: '#888', cursor: 'not-allowed' } : iS} />
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>
                   <label style={lS}>Correo electrónico</label>
-                  <input type="email" value={email}
+                  <input type="email" value={email} disabled={esCuentaAdministrada}
                     onChange={e => setEmail(e.target.value)}
-                    style={iS} />
-                  <p style={{ color: '#f59e0b', fontSize: '0.78rem', marginTop: '4px' }}>
-                    Si cambias el correo, lo necesitarás para iniciar sesión.
-                  </p>
+                    style={esCuentaAdministrada ? { ...iS, background: '#f0f0f0', color: '#888', cursor: 'not-allowed' } : iS} />
+                  {!esCuentaAdministrada && (
+                    <p style={{ color: '#f59e0b', fontSize: '0.78rem', marginTop: '4px' }}>
+                      Si cambias el correo, lo necesitarás para iniciar sesión.
+                    </p>
+                  )}
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>
@@ -204,20 +258,30 @@ const Perfil: React.FC = () => {
                     style={{ ...iS, background: '#f0f0f0', color: '#888', cursor: 'not-allowed' }} />
                 </div>
 
-                <button
-                  onClick={() => setConfirmGuardar(true)}
-                  className="btn-AuraSpa"
-                  style={{ padding: '12px 30px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                  disabled={guardando}
-                >
-                  {guardando ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {guardando ? 'Guardando...' : 'Guardar cambios'}
-                </button>
+                {!esCuentaAdministrada && (
+                  <button
+                    onClick={() => setConfirmGuardar(true)}
+                    className="btn-AuraSpa"
+                    style={{ padding: '12px 30px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    disabled={guardando}
+                  >
+                    {guardando ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                    {guardando ? 'Guardando...' : 'Guardar cambios'}
+                  </button>
+                )}
               </div>
             )}
 
             {/* ── SEGURIDAD ── */}
-            {seccion === 'seguridad' && (
+            {seccion === 'seguridad' && esCuentaAdministrada && (
+              <div className="card-aura" style={{ padding: '35px' }}>
+                <h3 style={{ color: 'var(--aura-navy)', fontWeight: 'bold', marginBottom: '8px' }}>Seguridad</h3>
+                <p style={{ color: '#888', fontSize: '0.85rem' }}>
+                  Los datos de esta cuenta son administrados por el sistema.
+                </p>
+              </div>
+            )}
+            {seccion === 'seguridad' && !esCuentaAdministrada && (
               <div className="card-aura" style={{ padding: '35px' }}>
                 <h3 style={{ color: 'var(--aura-navy)', fontWeight: 'bold', marginBottom: '8px' }}>Cambiar contraseña</h3>
                 <p style={{ color: 'var(--aura-gray)', fontSize: '0.9rem', marginBottom: '25px' }}>Mínimo 8 caracteres.</p>
@@ -268,6 +332,9 @@ const Perfil: React.FC = () => {
               </div>
             )}
 
+            {/* ── Rostro (Aurora Face ID) — dentro de Seguridad ── */}
+            {seccion === 'seguridad' && (user?.perfil === 'Admin') && <RegistroRostro />}
+
             {/* ── 2FA ── */}
             {seccion === 'dos-fa' && (
               <div className="card-aura" style={{ padding: '35px' }}>
@@ -285,24 +352,28 @@ const Perfil: React.FC = () => {
                 <p style={{ color:'var(--aura-gray)', fontSize:'0.88rem', margin:'20px 0' }}>
                   Con la autenticación en dos pasos, cada vez que inicies sesión deberás ingresar un código de 6 dígitos generado por una aplicación como <strong>Google Authenticator</strong> o <strong>Authy</strong>.
                 </p>
+                {error2FA && (
+                  <div style={{ background:'#ffebee', color:'#c62828', padding:'12px', borderRadius:'14px', marginBottom:'16px', fontSize:'0.85rem' }}>
+                    {error2FA}
+                  </div>
+                )}
                 {!activo2FA ? (
-                  <button onClick={activar2FA} className="btn-AuraSpa" style={{ padding:'12px 28px' }}>
-                    Activar 2FA
+                  <button onClick={activar2FA} disabled={cargando2FA} className="btn-AuraSpa" style={{ padding:'12px 28px' }}>
+                    {cargando2FA ? <Loader2 size={16} className="animate-spin" /> : 'Activar 2FA'}
                   </button>
                 ) : (
                   <div>
-                    {clave2FA && (
-                      <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:'14px', padding:'16px', marginBottom:'16px' }}>
-                        <p style={{ color:'#16a34a', fontWeight:'600', fontSize:'0.85rem', margin:'0 0 6px' }}>Clave secreta (guárdala):</p>
-                        <code style={{ color:'#15803d', fontSize:'1rem', letterSpacing:'0.1em' }}>{clave2FA}</code>
-                        <p style={{ color:'#888', fontSize:'0.75rem', margin:'8px 0 0' }}>
-                          En producción, escanearías un código QR con Google Authenticator.
-                        </p>
+                    {qrUrl2FA && (
+                      <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:'14px', padding:'16px', marginBottom:'16px', textAlign:'center' }}>
+                        <p style={{ color:'#16a34a', fontWeight:'600', fontSize:'0.85rem', margin:'0 0 12px' }}>Escanea este código con Google Authenticator:</p>
+                        <div style={{ display:'inline-block', padding:'12px', background:'#fff', borderRadius:'12px' }}>
+                          <QRCodeSVG value={qrUrl2FA} size={150} />
+                        </div>
                       </div>
                     )}
-                    <button onClick={() => { setActivo2FA(false); setClave2FA(''); }}
+                    <button onClick={desactivar2FA} disabled={cargando2FA}
                       style={{ padding:'12px 28px', background:'#fef2f2', color:'#ef4444', border:'1px solid #fecaca', borderRadius:'30px', cursor:'pointer', fontWeight:'600' }}>
-                      Desactivar 2FA
+                      {cargando2FA ? <Loader2 size={16} className="animate-spin" /> : 'Desactivar 2FA'}
                     </button>
                   </div>
                 )}

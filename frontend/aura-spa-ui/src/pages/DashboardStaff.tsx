@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Calculator, Users, Settings, BarChart3, Bell, CalendarCheck, Calendar, CreditCard } from 'lucide-react';
+import { Calculator, Users, Settings, BarChart3, Bell, CalendarCheck, Calendar, CreditCard, UserCheck, ShoppingBag, Gift } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../services/apiClient';
 
@@ -108,6 +108,26 @@ const DashboardStaff: React.FC = () => {
       {/* Cards principales */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '30px' }}>
 
+        {/* Verificación de llegada (Aurora Face ID) — todos los staff */}
+        <div className="card-aura" style={{ cursor: 'pointer', borderBottom: '6px solid #a855f7' }} onClick={() => navigate('/checkin-cliente')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
+            <div style={{ background: '#f3e8ff', padding: '15px', borderRadius: '20px', color: '#7c3aed' }}><UserCheck size={28} /></div>
+            <h3 style={{ fontWeight: 'bold' }}>Llegada de Clientes</h3>
+          </div>
+          <p style={{ color: '#666', marginBottom: '20px' }}>Verifica por cédula que el cliente llegó y tiene cita hoy; recepción recibe la alerta al instante.</p>
+        </div>
+
+        {/* Reservas de productos de clientes — Admin y Cajero */}
+        {(esAdmin || esCajero) && (
+          <div className="card-aura" style={{ cursor: 'pointer', borderBottom: '6px solid #f59e0b' }} onClick={() => navigate('/reservas-staff')}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
+              <div style={{ background: '#fef3c7', padding: '15px', borderRadius: '20px', color: '#b45309' }}><ShoppingBag size={28} /></div>
+              <h3 style={{ fontWeight: 'bold' }}>Reservas de Productos</h3>
+            </div>
+            <p style={{ color: '#666', marginBottom: '20px' }}>Ve y entrega los productos que los clientes reservaron desde su cuenta.</p>
+          </div>
+        )}
+
         {/* Punto de Venta — Admin y Cajero */}
         {(esAdmin || esCajero) && (
           <div className="card-aura" style={{ cursor: 'pointer', borderBottom: '6px solid var(--aura-lavender)' }} onClick={() => navigate('/caja')}>
@@ -160,6 +180,17 @@ const DashboardStaff: React.FC = () => {
               <h3 style={{ fontWeight: 'bold' }}>Mis Citas de Hoy</h3>
             </div>
             <p style={{ color: '#666', marginBottom: '20px' }}>Consulta y gestiona las citas asignadas a ti hoy.</p>
+          </div>
+        )}
+
+        {/* Paquetes de mis Clientes — solo Especialista */}
+        {esEspecialista && (
+          <div className="card-aura" style={{ borderBottom: '6px solid #f472b6', cursor: 'pointer' }} onClick={() => navigate('/paquetes-especialista')}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
+              <div style={{ background: '#fdf2f8', padding: '15px', borderRadius: '20px', color: '#db2777' }}><Gift size={28} /></div>
+              <h3 style={{ fontWeight: 'bold' }}>Paquetes de mis Clientes</h3>
+            </div>
+            <p style={{ color: '#666', marginBottom: '20px' }}>Consulta las sesiones restantes y regístralas cuando el cliente complete una.</p>
           </div>
         )}
 

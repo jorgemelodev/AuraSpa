@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import apiClient from '../services/apiClient';
+import { HORAS_SPA, formatHora12, horaFueraDeHorarioDomingo } from '../utils/horasSpa';
+import SelectorFecha from '../components/SelectorFecha';
 
 type CategoriaServicio = 'Facial' | 'Masaje' | 'Depilación' | 'Cejas y Pestañas' | 'Uñas' | 'Pelo' | '';
 
@@ -14,16 +16,59 @@ const CATEGORIAS = [
   { id: 'Pelo',             emoji: '✂️', desc: 'Corte, tinte y más' },
 ];
 
+// Mapea la opción visible del formulario al nombre real del servicio en el catálogo.
+// Sin esto, el servicio reservado quedaba fijo en el primero alfabético de la
+// categoría (ej. "Drenaje Linfático" en Masajes) sin importar qué tipo eligiera
+// el cliente — el nombre mostrado/cobrado no coincidía con lo que pidió.
+// Los tipos que no aparecen aquí (ej. "Media pierna", "Peinado", "Tinte
+// pestañas") no tienen todavía un servicio propio en el catálogo.
+const MAPA_TIPO_A_SERVICIO: Partial<Record<CategoriaServicio, Record<string, string>>> = {
+  'Facial': {
+    'Limpieza': 'Limpieza Facial Profunda', 'Hidratación': 'Facial Hidratante',
+    'Anti-edad': 'Facial Anti-edad', 'Acné': 'Facial para Acné',
+  },
+  'Masaje': {
+    // 'Relajante' no está aquí: el catálogo tiene "Masaje Relajante 60min" y
+    // "90min" como servicios separados, así que se resuelve aparte según la
+    // duración elegida (ver efecto más abajo).
+    'Descontracturante': 'Masaje Descontracturante',
+    'Piedras calientes': 'Masaje con Piedras', 'Drenaje linfático': 'Drenaje Linfático',
+  },
+  'Depilación': {
+    'Axilas': 'Depilación Axilas', 'Piernas completas': 'Depilación Piernas Completas',
+    'Bikini': 'Depilación Bikini', 'Facial': 'Depilación Facial',
+  },
+  'Cejas y Pestañas': {
+    'Diseño': 'Diseño de Cejas', 'Tinte cejas': 'Tinte de Cejas',
+    'Extensiones': 'Extensiones de Pestañas', 'Lifting': 'Lifting de Pestañas',
+  },
+  'Uñas': {
+    'Manicura': 'Manicura Rusa', 'Pedicura': 'Pedicura Spa',
+    'Acrílicas': 'Uñas Acrílicas Full', 'Nail Art': 'Nail Art (por diseño)',
+  },
+  'Pelo': {
+    'Corte': 'Corte Femenino', 'Tinte': 'Tinte Full', 'Mechas': 'Mechas Californianas',
+    'Keratina': 'Keratina Brasileña', 'Hidratación': 'Hidratación Profunda',
+  },
+};
+
 interface Especialista { idEmpleado: number; nombreCompleto: string; }
 interface Servicio { id: number; nombre: string; categoria?: string; }
 interface Sucursal { idSucursal: number; nombre: string; }
 
-const HORAS = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','14:00','14:30','15:00','15:30','16:00','16:30','17:00'];
-
 // Margen mínimo de anticipación para reservar el mismo día
 const MARGEN_HORAS_HOY = 2;
 
-const esHoy = (fecha: string) => fecha === new Date().toISOString().split('T')[0];
+// Formatea una fecha usando sus componentes LOCALES (evita el corrimiento de
+// día que produce toISOString() en zonas horarias negativas como RD, UTC-4).
+const fechaLocalISO = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const esHoy = (fecha: string) => fecha === fechaLocalISO(new Date());
 
 const horaPasada = (fecha: string, hora: string) => {
   if (!esHoy(fecha)) return false;
@@ -57,11 +102,12 @@ const Agendamiento: React.FC = () => {
   const [categoria, setCategoria] = useState<CategoriaServicio>(
     mapearCategoria(searchParams.get('categoria') ?? '')
   );
-  const [fecha, setFecha] = useState('');
-  const [hora, setHora] = useState('');
+  const [fecha, setFecha] = useState(searchParams.get('fecha') ?? '');
+  const [hora, setHora] = useState(searchParams.get('hora') ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fechaError, setFechaError] = useState('');
+  const [confirmModal, setConfirmModal] = useState(false);
   const [horasOcupadas, setHorasOcupadas] = useState<string[]>([]);
   const [diasBloqueados, setDiasBloqueados] = useState<Record<string, string>>({});
 
@@ -146,10 +192,40 @@ const Agendamiento: React.FC = () => {
           .filter((s: any) => (s.categoria?.nombre ?? '').toLowerCase().includes(categoria.toLowerCase()))
           .map((s: any) => ({ id: s.idItem, nombre: s.nombre, categoria: s.categoria?.nombre }));
         setServicios(filtered);
+        // Provisional hasta que el usuario elija un "tipo" concreto (o si esa
+        // categoría no tiene un mapeo definido) — se corrige en el efecto de abajo.
         if (!idServicio && filtered.length > 0) setIdServicio(String(filtered[0].id));
       }).catch(() => {});
     }
   }, [categoria]);
+
+  // Corrige idServicio para que corresponda al "tipo" que el cliente ve y elige
+  // en el formulario, en vez de quedarse en el primer servicio alfabético de la
+  // categoría (bug real: elegir "Relajante" reservaba "Drenaje Linfático").
+  useEffect(() => {
+    if (!categoria || servicios.length === 0) return;
+    const tipoSeleccionado =
+      categoria === 'Facial' ? tipoFacial :
+      categoria === 'Masaje' ? tipoMasaje :
+      categoria === 'Depilación' ? zonaDepilacion :
+      categoria === 'Cejas y Pestañas' ? subservicioCejas :
+      categoria === 'Uñas' ? tipoUnias :
+      categoria === 'Pelo' ? tipoServicioPelo : '';
+    if (!tipoSeleccionado) return;
+
+    let nombreServicio: string | undefined;
+    if (categoria === 'Masaje' && tipoSeleccionado === 'Relajante') {
+      // El catálogo separa "Relajante" en dos servicios por duración; no hay
+      // versión de 30min, así que cae a la de 60min como la más cercana.
+      if (!duracionMasaje) return;
+      nombreServicio = duracionMasaje === '90' ? 'Masaje Relajante 90min' : 'Masaje Relajante 60min';
+    } else {
+      nombreServicio = MAPA_TIPO_A_SERVICIO[categoria]?.[tipoSeleccionado];
+    }
+    if (!nombreServicio) return; // ese tipo aún no tiene un servicio propio en el catálogo
+    const match = servicios.find(s => s.nombre === nombreServicio);
+    if (match) setIdServicio(String(match.id));
+  }, [categoria, servicios, tipoFacial, tipoMasaje, duracionMasaje, zonaDepilacion, subservicioCejas, tipoUnias, tipoServicioPelo]);
 
   useEffect(() => {
     if (!categoria || !idSucursal) return;
@@ -165,7 +241,7 @@ const Agendamiento: React.FC = () => {
   useEffect(() => {
     apiClient.get('/api/core/dias-bloqueados').then(res => {
       const mapa: Record<string, string> = {};
-      res.data.forEach((d: any) => { mapa[new Date(d.fecha).toISOString().split('T')[0]] = d.motivo; });
+      res.data.forEach((d: any) => { mapa[fechaLocalISO(new Date(d.fecha))] = d.motivo; });
       setDiasBloqueados(mapa);
     }).catch(() => {});
   }, []);
@@ -183,7 +259,7 @@ const Agendamiento: React.FC = () => {
 
   // Si la hora ya elegida quedó ocupada o pasó el margen mínimo tras cambiar especialista/fecha, la deseleccionamos
   useEffect(() => {
-    if (hora && (horasOcupadas.includes(hora) || horaPasada(fecha, hora))) setHora('');
+    if (hora && (horasOcupadas.includes(hora) || horaPasada(fecha, hora) || horaFueraDeHorarioDomingo(fecha, hora))) setHora('');
   }, [horasOcupadas, fecha]);
 
   useEffect(() => {
@@ -197,9 +273,17 @@ const Agendamiento: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!categoria) { setError('Selecciona una categoría de servicio.'); return; }
+    if (!idSucursal) { setError('Selecciona una sucursal.'); return; }
     if (!fecha || !hora) { setError('Selecciona fecha y hora.'); return; }
     if (diasBloqueados[fecha]) { setError(`Esa fecha no está disponible (${diasBloqueados[fecha]}).`); return; }
+    if (horaPasada(fecha, hora)) { setError(`Para hoy, solo se pueden agendar horas con al menos ${MARGEN_HORAS_HOY} horas de anticipación.`); return; }
+    if (horaFueraDeHorarioDomingo(fecha, hora)) { setError('Los domingos atendemos de 10:00 AM a 4:00 PM.'); return; }
+    setError('');
+    setConfirmModal(true);
+  };
 
+  const confirmarCita = async () => {
+    setConfirmModal(false);
     setLoading(true);
     setError('');
 
@@ -208,7 +292,7 @@ const Agendamiento: React.FC = () => {
     try {
       await apiClient.post('/api/citas', {
         idItem: parseInt(idServicio) || 1,
-        idSucursal: parseInt(idSucursal) || 1,
+        idSucursal: parseInt(idSucursal),
         idEmpleado: idEspecialista ? parseInt(idEspecialista) : null,
         fechaHora,
         tipoFacial: tipoFacial || null,
@@ -429,18 +513,8 @@ const Agendamiento: React.FC = () => {
 
           <div style={{ marginBottom: '20px' }}>
             <label style={labelStyle}>Fecha</label>
-            <input type="date" value={fecha} onChange={(e) => {
-                const val = e.target.value;
-                if (diasBloqueados[val]) {
-                  setFechaError(`Esa fecha no está disponible (${diasBloqueados[val]}). Selecciona otra fecha.`);
-                  setFecha('');
-                  return;
-                }
-                setFechaError('');
-                setFecha(val);
-              }}
-              min={new Date().toISOString().split('T')[0]} required
-              style={{ ...inputStyle, border: fechaError ? '1px solid #ef4444' : '1px solid #ddd' }} />
+            <SelectorFecha value={fecha} onChange={(val) => { setFechaError(''); setFecha(val); }}
+              diasBloqueados={diasBloqueados} error={!!fechaError} />
             {fechaError && <p style={{ fontSize: '0.78rem', color: '#c62828', marginTop: '8px' }}>{fechaError}</p>}
           </div>
 
@@ -448,16 +522,22 @@ const Agendamiento: React.FC = () => {
             <label style={labelStyle}>Hora</label>
             <select value={hora} onChange={(e) => setHora(e.target.value)} required style={{ ...inputStyle, cursor: 'pointer' }}>
               <option value="">Selecciona una hora...</option>
-              {HORAS.map(h => {
+              {HORAS_SPA.map(h => {
                 const ocupada = horasOcupadas.includes(h);
                 const pasada = horaPasada(fecha, h);
+                const fueraDomingo = horaFueraDeHorarioDomingo(fecha, h);
                 return (
-                  <option key={h} value={h} disabled={ocupada || pasada}>
-                    {h} {parseInt(h) < 12 ? 'AM' : 'PM'}{ocupada ? ' (ocupada)' : pasada ? ' (no disponible)' : ''}
+                  <option key={h} value={h} disabled={ocupada || pasada || fueraDomingo}>
+                    {formatHora12(h)}{ocupada ? ' (ocupada)' : pasada ? ' (no disponible)' : fueraDomingo ? ' (fuera de horario)' : ''}
                   </option>
                 );
               })}
             </select>
+            {fecha && new Date(`${fecha}T00:00`).getDay() === 0 && (
+              <p style={{ fontSize: '0.78rem', color: 'var(--aura-lavender)', marginTop: '8px' }}>
+                Los domingos atendemos de 10:00 AM a 4:00 PM.
+              </p>
+            )}
             {fecha && esHoy(fecha) && (
               <p style={{ fontSize: '0.78rem', color: 'var(--aura-gray)', marginTop: '8px' }}>
                 Para hoy, solo se pueden agendar horas con al menos {MARGEN_HORAS_HOY} horas de anticipación.
@@ -483,6 +563,40 @@ const Agendamiento: React.FC = () => {
           <span onClick={() => navigate(-1)} style={{ color: 'var(--aura-lavender)', fontWeight: 'bold', cursor: 'pointer' }}>← Volver al catálogo</span>
         </p>
       </div>
+
+      {/* Modal de confirmación */}
+      {confirmModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div className="card-aura" style={{ maxWidth: '420px', width: '100%', padding: '40px', borderRadius: '25px' }}>
+            <h4 style={{ color: 'var(--aura-navy)', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>Confirmar cita</h4>
+            <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '20px', textAlign: 'center' }}>Revisa los detalles antes de confirmar.</p>
+            <div style={{ background: '#f8f6ff', borderRadius: '16px', padding: '18px', marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                <span style={{ color: '#888' }}>Servicio</span>
+                <strong style={{ color: 'var(--aura-navy)' }}>{servicios.find(s => String(s.id) === idServicio)?.nombre ?? categoria}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                <span style={{ color: '#888' }}>Fecha</span>
+                <strong style={{ color: 'var(--aura-navy)' }}>{fecha && new Date(`${fecha}T00:00`).toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                <span style={{ color: '#888' }}>Hora</span>
+                <strong style={{ color: 'var(--aura-navy)' }}>{hora}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                <span style={{ color: '#888' }}>Especialista</span>
+                <strong style={{ color: 'var(--aura-navy)' }}>{especialistas.find(e => String(e.idEmpleado) === idEspecialista)?.nombreCompleto ?? 'Sin preferencia'}</strong>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={confirmarCita} className="btn-AuraSpa" style={{ flex: 1, padding: '12px' }} disabled={loading}>
+                {loading ? <Loader2 className="animate-spin" size={18} style={{ margin: '0 auto', display: 'block' }} /> : 'Sí, confirmar'}
+              </button>
+              <button onClick={() => setConfirmModal(false)} className="btn-outline-aura" style={{ flex: 1, padding: '12px' }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

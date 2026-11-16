@@ -23,12 +23,22 @@ const Login: React.FC = () => {
     setLoading(true); setError('');
     try {
       const { data } = await apiClient.post('/api/auth/login', { email, password });
-      const { token, usuario, primerLogin } = data;
+      const { token, usuario, primerLogin, requiere2FA, tempToken } = data;
+
+      if (requiere2FA) {
+        // Cuenta con 2FA activo: se exige el código en cada login, no solo el primero.
+        sessionStorage.setItem('aura_2fa_token', tempToken);
+        sessionStorage.setItem('aura_2fa_usuario', JSON.stringify(usuario));
+        sessionStorage.setItem('aura_2fa_modo', 'verificar');
+        navigate('/verificacion-2fa');
+        return;
+      }
 
       if (primerLogin) {
         // Sesión aún no establecida: se guarda temporalmente hasta pasar el 2FA
         sessionStorage.setItem('aura_2fa_token', token);
         sessionStorage.setItem('aura_2fa_usuario', JSON.stringify(usuario));
+        sessionStorage.setItem('aura_2fa_modo', 'configurar');
         navigate('/verificacion-2fa');
         return;
       }
@@ -36,6 +46,10 @@ const Login: React.FC = () => {
       // Guardar que ya inició sesión en esta sesión del navegador
       sessionStorage.setItem('aura_cerro_sesion', '0');
       login(token, usuario);
+      if (usuario.contrasenaProvisional) {
+        navigate('/perfil', { state: { forzarCambioPassword: true } });
+        return;
+      }
       const p = usuario.perfil;
       navigate(['Admin','Cajero','Especialista'].includes(p) ? '/dashboard/staff' : '/dashboard/client');
     } catch (err: any) {
@@ -48,8 +62,14 @@ const Login: React.FC = () => {
   return (
     <div style={{ display:'flex', justifyContent:'center', alignItems:'center', minHeight:'100vh', background:'var(--aura-beige)', padding:'20px' }}>
       <div className="card-aura animate-fade-in" style={{ width:'100%', maxWidth:'500px', padding:'50px', borderRadius:'30px' }}>
+        <span onClick={() => navigate('/')} style={{ display:'inline-flex', alignItems:'center', gap:'6px', color:'var(--aura-lavender)', fontSize:'0.85rem', fontWeight:'600', cursor:'pointer', marginBottom:'20px' }}>
+          ← Volver al inicio
+        </span>
+        <div style={{ textAlign:'center' }}>
+          <img src="/Logo_sin_letras.png" style={{ maxWidth:'90px' }} alt="AuraSpa" />
+        </div>
         <h2 style={{ textAlign:'center', color:'var(--aura-navy)', fontWeight:'bold', marginBottom:'8px' }}>
-          {yaEntroAntes ? 'Bienvenida de nuevo' : 'Bienvenida'}
+          {yaEntroAntes ? 'Bienvenido/a de nuevo' : 'Bienvenido/a'}
         </h2>
         <p style={{ textAlign:'center', color:'var(--aura-gray)', fontSize:'0.88rem', marginBottom:'30px' }}>
           {yaEntroAntes ? 'Nos alegra verte otra vez.' : 'Tu oasis te espera.'}

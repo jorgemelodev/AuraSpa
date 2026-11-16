@@ -9,7 +9,7 @@ const Home: React.FC = () => {
       {/* Hero Section */}
       <section className="hero-main animate-fade-in">
         <div style={{ padding: '0 10%' }}>
-          <h1 className="display-1 mb-4">Aura Spa ✨</h1>
+          <img src="/Logo_con_letras.png" style={{ maxWidth: '300px', marginBottom: '20px' }} alt="AuraSpa" />
           <p style={{ fontSize: '1.5rem', marginBottom: '40px', opacity: 0.9 }}>
             Liderando la industria del cuidado personal mediante la convergencia de la salud biológica y la seguridad digital.
           </p>
@@ -85,7 +85,7 @@ const Home: React.FC = () => {
       <footer className="footer-main">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '50px' }}>
           <div>
-            <h3 style={{ color: 'white', marginBottom: '20px' }}>Aura Spa ✨</h3>
+            <img src="/Logo_con_letras.png" style={{ maxWidth: '70px', marginBottom: '20px' }} alt="AuraSpa" />
             <p style={{ fontSize: '0.9rem', opacity: 0.8 }}>Protegiendo tu aura, asegurando tu bienestar mediante protocolos de alta ingeniería y servicios estéticos de clase mundial.</p>
           </div>
           <div>
@@ -98,9 +98,9 @@ const Home: React.FC = () => {
           </div>
           <div>
             <h5 style={{ color: 'white', marginBottom: '20px' }}>Horarios</h5>
-            <p style={{ fontSize: '0.9rem', opacity: 0.8 }}>Lunes - Viernes: 9:00 - 20:00</p>
-            <p style={{ fontSize: '0.9rem', opacity: 0.8 }}>Sábados: 10:00 - 18:00</p>
-            <p style={{ fontSize: '0.9rem', opacity: 0.8, color: '#ffc107' }}>Domingos: Cerrado</p>
+            <p style={{ fontSize: '0.9rem', opacity: 0.8 }}>Lunes - Sabados: 9:00 - 20:00</p>
+            <p style={{ fontSize: '0.9rem', opacity: 0.8 }}>Domingos: 10:00 - 18:00</p>
+          
           </div>
           <div style={{ textAlign: 'right' }}>
             <h5 style={{ color: 'white', marginBottom: '20px' }}>Síguenos</h5>

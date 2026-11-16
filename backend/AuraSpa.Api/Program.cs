@@ -28,20 +28,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// 3. CORS — permite el frontend React
+// 3. CORS — permite el frontend React (AllowCredentials requerido por SignalR)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp",
         policy => policy
             .WithOrigins("http://localhost:5173", "http://localhost:5174")
             .AllowAnyMethod()
-            .AllowAnyHeader());
+            .AllowAnyHeader()
+            .AllowCredentials());
 });
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<EmailService>();
+
+// 4. Aurora — asistente de voz: SignalR + identificación biométrica
+//    (LocalFaceIdService: matching real por descriptores de 128 dimensiones, sin fotos)
+builder.Services.AddSignalR();
+builder.Services.AddScoped<AuraSpa.Api.Services.IFaceIdService, AuraSpa.Api.Services.LocalFaceIdService>();
 
 var app = builder.Build();
 
@@ -62,4 +68,5 @@ app.UseCors("AllowReactApp");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<AuraSpa.Api.Hubs.AuroraHub>("/hubs/aurora");
 app.Run();

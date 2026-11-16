@@ -49,6 +49,24 @@ namespace AuraSpa.Api.Controllers
             var cliente = await _ctx.Clientes.FindAsync(usuario.IdCliente.Value);
             if (cliente != null) cliente.Puntos += PuntosCalculator.PuntosResena;
 
+            if (cita.IdEmpleado.HasValue)
+            {
+                var usuarioEspecialista = await _ctx.Usuarios.FirstOrDefaultAsync(u => u.IdEmpleado == cita.IdEmpleado.Value);
+                if (usuarioEspecialista != null)
+                {
+                    _ctx.Notificaciones.Add(new Notificacion
+                    {
+                        IdUsuario  = usuarioEspecialista.IdUsuario,
+                        IdCita     = cita.IdCita,
+                        Tipo       = "Sistema",
+                        Titulo     = "Nueva reseña recibida",
+                        Mensaje    = $"Un cliente dejó una reseña de {dto.Calificacion}★ sobre tu servicio" + (string.IsNullOrWhiteSpace(dto.Comentario) ? "." : $": \"{dto.Comentario}\""),
+                        FechaEnvio = DateTime.Now,
+                        Leida      = false
+                    });
+                }
+            }
+
             await _ctx.SaveChangesAsync();
             return Ok(new { resena.IdResena, puntosGanados = PuntosCalculator.PuntosResena });
         }

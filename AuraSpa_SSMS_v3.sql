@@ -199,6 +199,9 @@ CREATE TABLE Usuario (
     bloqueado_hasta     DATETIME      NULL,
     fecha_registro      DATETIME      NOT NULL DEFAULT GETDATE(),
     ultimo_acceso       DATETIME      NULL,
+    totp_secret         NVARCHAR(100) NULL,
+    doble_factor_activo BIT           NOT NULL DEFAULT 0,
+    contrasena_provisional BIT        NOT NULL DEFAULT 0,
     CONSTRAINT pk_usuario          PRIMARY KEY (id_usuario),
     CONSTRAINT uq_usuario_email    UNIQUE (email),
     CONSTRAINT uq_usuario_username UNIQUE (nombre_usuario),
@@ -463,6 +466,18 @@ CREATE TABLE ConsentimientoInformado (
 );
 GO
 
+-- Plantillas de formularios de consentimiento (distinto de ConsentimientoInformado, que guarda las firmas)
+CREATE TABLE Consentimiento (
+    id_consentimiento BIGINT        NOT NULL IDENTITY(1,1),
+    titulo            NVARCHAR(200) NOT NULL,
+    descripcion       NVARCHAR(500) NULL,
+    contenido         NVARCHAR(MAX) NOT NULL,
+    activo            BIT           NOT NULL DEFAULT 1,
+    fecha_creacion    DATETIME      NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT pk_consentimiento_form PRIMARY KEY (id_consentimiento)
+);
+GO
+
 CREATE TABLE Resena (
     id_resena    BIGINT       NOT NULL IDENTITY(1,1),
     id_cliente   BIGINT       NOT NULL,
@@ -488,6 +503,7 @@ CREATE TABLE ExpedienteClinico (
     medicamentos          NVARCHAR(MAX)  NULL,
     notas_especialista    NVARCHAR(MAX)  NULL,
     ultima_actualizacion  DATETIME       NOT NULL DEFAULT GETDATE(),
+    activo                BIT            NOT NULL DEFAULT 1,
     CONSTRAINT pk_expediente         PRIMARY KEY (id_expediente),
     CONSTRAINT uq_expediente_cliente UNIQUE (id_cliente),
     CONSTRAINT fk_expediente_cliente FOREIGN KEY (id_cliente) REFERENCES Cliente(id_cliente) ON UPDATE NO ACTION ON DELETE NO ACTION

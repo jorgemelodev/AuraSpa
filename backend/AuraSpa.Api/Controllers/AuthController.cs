@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using OtpNet;
 
 namespace AuraSpa.Api.Controllers
 {
@@ -30,6 +31,7 @@ namespace AuraSpa.Api.Controllers
         {
             var usuario = await _ctx.Usuarios
                 .Include(u => u.Perfil)
+                .Include(u => u.Cliente)
                 .FirstOrDefaultAsync(u => u.Email == dto.Email || u.NombreUsuario == dto.Email);
 
             if (usuario == null)
@@ -57,26 +59,44 @@ namespace AuraSpa.Api.Controllers
             usuario.UltimoAcceso    = DateTime.Now;
             await _ctx.SaveChangesAsync();
 
+            var usuarioDto = new
+            {
+                id       = usuario.IdUsuario,
+                nombre   = usuario.Nombre,
+                apellido = usuario.Apellido,
+                email    = usuario.Email,
+                perfil   = usuario.Perfil?.Nombre ?? "Cliente",
+                // El frontend usará 'perfil' en vez de 'rol'
+                rol      = usuario.Perfil?.Nombre ?? "Cliente",
+                contrasenaProvisional = usuario.ContrasenaProvisional,
+                genero   = usuario.Cliente?.Genero
+            };
+
+            // Cuenta con 2FA activo: no se entrega el token de acceso todavía —
+            // se exige el código TOTP en CADA login, no solo en el primero.
+            if (usuario.DobleFactorActivo)
+                return Ok(new
+                {
+                    requiere2FA = true,
+                    tempToken   = GenerateJwt(usuario),
+                    usuario     = usuarioDto
+                });
+
             return Ok(new
             {
-                token   = GenerateJwt(usuario),
+                token = GenerateJwt(usuario),
                 primerLogin,
-                usuario = new
-                {
-                    id       = usuario.IdUsuario,
-                    nombre   = usuario.Nombre,
-                    apellido = usuario.Apellido,
-                    email    = usuario.Email,
-                    perfil   = usuario.Perfil?.Nombre ?? "Cliente",
-                    // El frontend usará 'perfil' en vez de 'rol'
-                    rol      = usuario.Perfil?.Nombre ?? "Cliente"
-                }
+                usuario = usuarioDto
             });
         }
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterDto dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.Email) || !System.Text.RegularExpressions.Regex.IsMatch(
+                    dto.Email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+                return BadRequest("El correo electrónico no tiene un formato válido.");
+
             if (await _ctx.Usuarios.AnyAsync(u => u.Email == dto.Email))
                 return BadRequest("El email ya está registrado.");
 
@@ -162,6 +182,17 @@ namespace AuraSpa.Api.Controllers
             usuario.Nombre   = dto.Nombre;
             usuario.Apellido = dto.Apellido;
             usuario.Telefono = dto.Telefono;
+
+            // Actualizar email (verificando que no esté en uso por otro usuario)
+            if (!string.IsNullOrWhiteSpace(dto.Email) && dto.Email.Trim() != usuario.Email)
+            {
+                var nuevoEmail = dto.Email.Trim();
+                var enUso = await _ctx.Usuarios.AnyAsync(u => u.Email == nuevoEmail && u.IdUsuario != idUsuario);
+                if (enUso) return BadRequest("Ese correo ya está registrado por otro usuario.");
+                usuario.Email = nuevoEmail;
+                if (usuario.Cliente != null) usuario.Cliente.Email = nuevoEmail;
+            }
+
             if (usuario.Cliente != null) {
                 usuario.Cliente.Nombres  = dto.Nombre;
                 usuario.Cliente.Apellidos = dto.Apellido;
@@ -187,8 +218,87 @@ namespace AuraSpa.Api.Controllers
                 return BadRequest("La nueva contraseña debe tener al menos 8 caracteres.");
 
             usuario.ContrasenaHash = BCrypt.Net.BCrypt.HashPassword(dto.PasswordNueva);
+            usuario.ContrasenaProvisional = false;
             await _ctx.SaveChangesAsync();
             return Ok(new { message = "Contraseña actualizada correctamente." });
+        }
+
+        // GET /api/auth/2fa/setup — genera (o reutiliza) el secreto TOTP del usuario y devuelve la URL para el QR
+        [HttpGet("2fa/setup")]
+        [Authorize]
+        public async Task<IActionResult> Setup2FA()
+        {
+            var idUsuario = long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var usuario   = await _ctx.Usuarios.FindAsync(idUsuario);
+            if (usuario == null) return NotFound();
+
+            if (string.IsNullOrEmpty(usuario.TotpSecret))
+            {
+                var secretBytes = KeyGeneration.GenerateRandomKey(20);
+                usuario.TotpSecret = Base32Encoding.ToString(secretBytes);
+                await _ctx.SaveChangesAsync();
+            }
+
+            var otpauthUrl = $"otpauth://totp/AuraSpa:{Uri.EscapeDataString(usuario.Email)}?secret={usuario.TotpSecret}&issuer=AuraSpa";
+            return Ok(new { secret = usuario.TotpSecret, url = otpauthUrl });
+        }
+
+        // POST /api/auth/2fa/verificar — valida el código de 6 dígitos generado por Google Authenticator
+        [HttpPost("2fa/verificar")]
+        [Authorize]
+        public async Task<IActionResult> Verificar2FA([FromBody] Verificar2FADto dto)
+        {
+            var idUsuario = long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var usuario   = await _ctx.Usuarios.FindAsync(idUsuario);
+            if (usuario == null || string.IsNullOrEmpty(usuario.TotpSecret))
+                return BadRequest("Código incorrecto");
+
+            var totp = new Totp(Base32Encoding.ToBytes(usuario.TotpSecret));
+            var esValido = totp.VerifyTotp(dto.Codigo, out _, new VerificationWindow(previous: 1, future: 1));
+
+            if (!esValido) return BadRequest("Código incorrecto");
+
+            return Ok(new { message = "Código verificado correctamente." });
+        }
+
+        // GET /api/auth/perfil — datos reales del usuario logueado (no depende del estado local del frontend)
+        [HttpGet("perfil")]
+        [Authorize]
+        public async Task<IActionResult> GetPerfil()
+        {
+            var idUsuario = long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var usuario   = await _ctx.Usuarios.Include(u => u.Perfil).FirstOrDefaultAsync(u => u.IdUsuario == idUsuario);
+            if (usuario == null) return NotFound();
+
+            return Ok(new
+            {
+                id       = usuario.IdUsuario,
+                nombre   = usuario.Nombre,
+                apellido = usuario.Apellido,
+                email    = usuario.Email,
+                telefono = usuario.Telefono,
+                perfil   = usuario.Perfil?.Nombre ?? "Cliente",
+                dobleFactorActivo = usuario.DobleFactorActivo,
+                contrasenaProvisional = usuario.ContrasenaProvisional
+            });
+        }
+
+        // PUT /api/auth/2fa/activar — activa o desactiva el 2FA de forma persistente
+        [HttpPut("2fa/activar")]
+        [Authorize]
+        public async Task<IActionResult> ActivarDosFA([FromBody] ActivarDosFADto dto)
+        {
+            var idUsuario = long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var usuario   = await _ctx.Usuarios.FindAsync(idUsuario);
+            if (usuario == null) return NotFound();
+
+            if (dto.Activo && string.IsNullOrEmpty(usuario.TotpSecret))
+                return BadRequest("Primero debes generar tu código QR antes de activar el 2FA.");
+
+            usuario.DobleFactorActivo = dto.Activo;
+            await _ctx.SaveChangesAsync();
+
+            return Ok(new { dobleFactorActivo = usuario.DobleFactorActivo });
         }
 
         // POST /api/auth/recuperar-contrasena
@@ -272,10 +382,12 @@ namespace AuraSpa.Api.Controllers
         public async Task<IActionResult> GetClientes()
         {
             var clientes = await _ctx.Clientes
+                .Include(c => c.TipoDocumento)
                 .OrderByDescending(c => c.FechaRegistro)
                 .Select(c => new {
                     c.IdCliente, c.Nombres, c.Apellidos, c.Email,
-                    c.Telefono, c.NumeroDocumento, c.FechaRegistro
+                    c.Telefono, c.NumeroDocumento, c.FechaRegistro,
+                    tipoDocumento = c.TipoDocumento != null ? c.TipoDocumento.Nombre : null
                 })
                 .ToListAsync();
             return Ok(clientes);

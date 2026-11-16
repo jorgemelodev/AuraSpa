@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Calendar, ShoppingBag, Clock, Heart, Bell, Package } from 'lucide-react';
+import { useAuth, saludoGenero } from '../context/AuthContext';
+import { Calendar, ShoppingBag, Clock, Heart, Bell, Package, Gift } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../services/apiClient';
 
@@ -20,10 +20,9 @@ const DashboardClient: React.FC = () => {
   const navigate = useNavigate();
   const [proximaCita, setProximaCita] = useState<ProximaCita | null>(null);
   const [ultimaNotif, setUltimaNotif] = useState<NotifResumen | null>(null);
-  const [conteoCitas, setConteoCitas] = useState({ pendientes: 0, confirmadas: 0, completadas: 0 });
 
   useEffect(() => {
-    // Carga la próxima cita pendiente o confirmada + conteo real por estado
+    // Carga la próxima cita pendiente o confirmada
     apiClient.get('/api/citas/mis-citas').then(res => {
       const futuras = res.data.filter((c: any) =>
         (c.estado === 'Pendiente' || c.estado === 'Confirmada') && new Date(c.fechaHora) > new Date()
@@ -36,12 +35,6 @@ const DashboardClient: React.FC = () => {
           especialista: futuras[0].especialista,
         });
       }
-
-      setConteoCitas({
-        pendientes:  res.data.filter((c: any) => c.estado === 'Pendiente').length,
-        confirmadas: res.data.filter((c: any) => c.estado === 'Confirmada').length,
-        completadas: res.data.filter((c: any) => c.estado === 'Completada').length,
-      });
     }).catch(() => {});
 
     // Carga la última notificación
@@ -63,7 +56,7 @@ const DashboardClient: React.FC = () => {
     <div className="animate-fade-in" style={{ padding: '60px 10%' }}>
       <div style={{ marginBottom: '50px', textAlign: 'center' }}>
         <h1 style={{ color: 'var(--aura-navy)', fontSize: '3rem', fontWeight: 'bold' }}>
-          Bienvenida, {user?.nombre || 'Cliente'}
+          {saludoGenero(user)}, {user?.nombre || 'Cliente'}
         </h1>
         <p style={{ color: 'var(--aura-gray)', fontSize: '1.2rem' }}>
           Tu espacio de bienestar personal.
@@ -93,18 +86,6 @@ const DashboardClient: React.FC = () => {
           </div>
           <h3 style={{ marginBottom: '15px', fontWeight: 'bold' }}>Mis Citas</h3>
           <p style={{ color: '#666' }}>Gestiona tus reservas actuales y revisa tu historial.</p>
-          {/* Conteo real por estado */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', margin: '15px 0' }}>
-            <span style={{ background: '#FDF8EC', color: '#D4AA00', padding: '4px 12px', borderRadius: '30px', fontSize: '0.78rem', fontWeight: '600' }}>
-              {conteoCitas.pendientes} Pendiente{conteoCitas.pendientes !== 1 ? 's' : ''}
-            </span>
-            <span style={{ background: '#f0ecff', color: '#6B5B93', padding: '4px 12px', borderRadius: '30px', fontSize: '0.78rem', fontWeight: '600' }}>
-              {conteoCitas.confirmadas} Confirmada{conteoCitas.confirmadas !== 1 ? 's' : ''}
-            </span>
-            <span style={{ background: '#f0fdf4', color: '#22c55e', padding: '4px 12px', borderRadius: '30px', fontSize: '0.78rem', fontWeight: '600' }}>
-              {conteoCitas.completadas} Completada{conteoCitas.completadas !== 1 ? 's' : ''}
-            </span>
-          </div>
           {/* Datos reales desde la API */}
           {proximaCita ? (
             <div style={{ marginTop: '20px', padding: '15px', background: '#f8f9fa', borderRadius: '15px', fontSize: '0.9rem', color: '#888' }}>
@@ -124,6 +105,14 @@ const DashboardClient: React.FC = () => {
           </div>
           <h3 style={{ marginBottom: '15px', fontWeight: 'bold' }}>Mis Reservas</h3>
           <p style={{ color: '#666' }}>Revisa el historial de productos que has reservado.</p>
+        </div>
+
+        <div className="card-aura" style={{ cursor: 'pointer', padding: '40px', textAlign: 'center', borderBottom: '6px solid var(--aura-lavender)' }} onClick={() => navigate('/mis-paquetes')}>
+          <div style={{ background: '#f0ecff', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px', color: 'var(--aura-lavender)' }}>
+            <Gift size={32} />
+          </div>
+          <h3 style={{ marginBottom: '15px', fontWeight: 'bold' }}>Mis Paquetes</h3>
+          <p style={{ color: '#666' }}>Consulta tus paquetes de sesiones y cuántas te quedan.</p>
         </div>
       </div>
 

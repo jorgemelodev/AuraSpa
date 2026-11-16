@@ -10,6 +10,10 @@ namespace AuraSpa.Api.Services
         public EmailService(IConfiguration configuration) => _configuration = configuration;
 
         public async Task SendEmailAsync(string toEmail, string toName, string subject, string htmlContent)
+            => await SendEmailAsync(toEmail, toName, subject, htmlContent, null, null);
+
+        public async Task SendEmailAsync(string toEmail, string toName, string subject, string htmlContent,
+            byte[]? adjuntoBytes, string? adjuntoNombre)
         {
             var apiKey    = _configuration["SendGrid:ApiKey"];
             var fromEmail = _configuration["SendGrid:FromEmail"];
@@ -19,6 +23,9 @@ namespace AuraSpa.Api.Services
             var from = new EmailAddress(fromEmail, fromName);
             var to   = new EmailAddress(toEmail, toName);
             var msg  = MailHelper.CreateSingleEmail(from, to, subject, plainTextContent: HtmlATexto(htmlContent), htmlContent: htmlContent);
+
+            if (adjuntoBytes != null && !string.IsNullOrWhiteSpace(adjuntoNombre))
+                msg.AddAttachment(adjuntoNombre, Convert.ToBase64String(adjuntoBytes), "application/pdf");
 
             await client.SendEmailAsync(msg);
         }

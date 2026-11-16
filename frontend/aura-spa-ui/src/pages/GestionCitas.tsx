@@ -30,6 +30,7 @@ const GestionCitas: React.FC = () => {
   const [search, setSearch] = useState('');
   const [cambiando, setCambiando] = useState<number | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ id: number; accion: string } | null>(null);
+  const [comentarioRechazo, setComentarioRechazo] = useState('');
 
   useEffect(() => {
     fetchCitas();
@@ -97,7 +98,7 @@ const GestionCitas: React.FC = () => {
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={fetchCitas} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>↻ Actualizar</button>
-          <button onClick={() => navigate('/dashboard/staff')} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
+          <button onClick={() => navigate(-1)} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
         </div>
       </div>
 
@@ -192,6 +193,15 @@ const GestionCitas: React.FC = () => {
               ¿Marcar como {confirmModal.accion}?
             </h4>
             <p style={{ color: 'var(--aura-gray)', marginBottom: '25px', fontSize: '0.9rem' }}>Esta acción actualizará el estado de la cita en el sistema.</p>
+            {confirmModal.accion === 'Rechazada' && (
+              <div style={{ marginBottom: '20px', textAlign: 'left' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--aura-gray)', fontWeight: '500' }}>Motivo del rechazo</label>
+                <textarea value={comentarioRechazo} onChange={e => setComentarioRechazo(e.target.value)} rows={3}
+                  placeholder="Explica brevemente por qué se rechaza esta cita..."
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '14px', border: '1px solid #ddd', outline: 'none', fontSize: '0.88rem', resize: 'none', boxSizing: 'border-box' }} />
+                {!comentarioRechazo.trim() && <p style={{ color: '#ef4444', fontSize: '0.78rem', marginTop: '4px' }}>El motivo es obligatorio para rechazar una cita.</p>}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button onClick={() => { if(confirmModal.accion==='Rechazada'&&!comentarioRechazo.trim()) return; cambiarEstado(confirmModal.id, confirmModal.accion); }} className="btn-AuraSpa" style={{ padding: '10px 25px' }}>Confirmar</button>
               <button onClick={() => setConfirmModal(null)} className="btn-outline-aura" style={{ padding: '10px 25px' }}>Cancelar</button>

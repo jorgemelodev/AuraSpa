@@ -8,7 +8,13 @@ interface User {
   perfil: string;
   telefono?: string;
   rol: string;
+  contrasenaProvisional?: boolean;
+  genero?: string | null;
 }
+
+/** "Bienvenido"/"Bienvenida" según el género del usuario (solo Cliente lo tiene registrado hoy). */
+export const saludoGenero = (user: User | null | undefined): string =>
+  user?.genero === 'M' ? 'Bienvenido' : user?.genero === 'F' ? 'Bienvenida' : 'Bienvenido/a';
 
 interface AuthContextType {
   user: User | null;
@@ -16,6 +22,7 @@ interface AuthContextType {
   login: (token: string, user: User) => void;
   logout: () => void;
   isAuthenticated: boolean;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +30,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('aura_user');
@@ -31,6 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(JSON.parse(savedUser));
       setToken(savedToken);
     }
+    setLoading(false);
   }, []);
 
   const login = (newToken: string, newUser: User) => {
@@ -46,10 +55,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('aura_user');
     localStorage.removeItem('aura_token');
     sessionStorage.setItem('aura_cerro_sesion', '1');
+    // El Face ID del Core debe pedirse de nuevo en el próximo inicio de sesión
+    sessionStorage.removeItem('aura_core_verificado');
+    sessionStorage.removeItem('aura_core_verificado_ts');
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token, loading }}>
       {children}
     </AuthContext.Provider>
   );

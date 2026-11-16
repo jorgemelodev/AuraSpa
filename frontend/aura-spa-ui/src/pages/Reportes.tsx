@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BarChart2, Users, Calendar, DollarSign, Star, Download, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import apiClient from '../services/apiClient';
+import jsPDF from 'jspdf';
+import { getLogoBase64 } from '../utils/pdfLogo';
 
 const COLORES = ['#6B5B93', '#B8A9C9', '#1F2D3D', '#8B7BA8', '#F5F0E8', '#4caf50', '#ff9800'];
 
 const Reportes: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [mes, setMes] = useState(new Date().getMonth() + 1);
-  const [anio] = useState(new Date().getFullYear());
+  const [mes, setMes] = useState(Number(searchParams.get('mes')) || new Date().getMonth() + 1);
+  const [anio] = useState(Number(searchParams.get('anio')) || new Date().getFullYear());
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
@@ -26,6 +29,104 @@ const Reportes: React.FC = () => {
   }, [mes, anio]);
 
   const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const mesesLargo = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const fmt = (n:number) => (n||0).toLocaleString('es-DO',{minimumFractionDigits:2});
+
+  const descargarReportePDF = async () => {
+    if (!data) return;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+
+    doc.setFillColor(26,26,46);
+    doc.rect(0,0,pageWidth,45,'F');
+    try {
+      const logo = await getLogoBase64();
+      doc.addImage(logo, 'PNG', margin, 4, 18, 20.5);
+    } catch {
+      doc.setFontSize(22); doc.setFont('helvetica','bold');
+      doc.setTextColor(255,255,255); doc.text('AURA', margin, 22);
+      const w = doc.getTextWidth('AURA');
+      doc.setTextColor(151,138,221); doc.text(' Spa', margin+w, 22);
+    }
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(200,200,220);
+    doc.text('Reporte de Ventas y Análisis', margin, 32);
+    doc.text(`${mesesLargo[mes-1]} de ${anio}`, margin, 39);
+
+    doc.setDrawColor(151,138,221); doc.setLineWidth(0.8);
+    doc.line(margin,50,pageWidth-margin,50);
+
+    let y = 64;
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(31,45,61);
+    doc.text('Resumen del mes', margin, y); y += 10;
+
+    const filas:[string,string][] = [
+      ['Total de ventas registradas:', String(data.resumenMes?.totalVentas ?? 0)],
+      ['Ingresos brutos:', `RD$ ${fmt(data.resumenMes?.ingresosBrutos)}`],
+      ['Descuentos aplicados:', `RD$ ${fmt(data.resumenMes?.descuentos)}`],
+      ['ITBIS total:', `RD$ ${fmt(data.resumenMes?.itbisTotal)}`],
+      ['Ingresos netos:', `RD$ ${fmt(data.resumenMes?.ingresosNetos)}`],
+      ['Cuentas por cobrar pendientes:', String(data.cxcPendientes ?? 0)],
+    ];
+    doc.setFontSize(10);
+    filas.forEach(([label, valor]) => {
+      doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80); doc.text(label, margin, y);
+      doc.setFont('helvetica','bold'); doc.setTextColor(31,45,61); doc.text(valor, pageWidth-margin, y, { align:'right' });
+      y += 8;
+    });
+
+    y += 8;
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(31,45,61);
+    doc.text('Servicios más vendidos', margin, y); y += 10;
+    doc.setFontSize(9.5);
+    if (!data.topServicios || data.topServicios.length === 0) {
+      doc.setFont('helvetica','normal'); doc.setTextColor(150,150,150);
+      doc.text('Sin datos para este mes.', margin, y); y += 8;
+    } else {
+      data.topServicios.forEach((s:any) => {
+        doc.setFont('helvetica','normal'); doc.setTextColor(60,60,60);
+        doc.text(`${s.servicio} (${s.veces}x)`, margin, y);
+        doc.setFont('helvetica','bold'); doc.setTextColor(31,45,61);
+        doc.text(`RD$ ${fmt(s.ingresos)}`, pageWidth-margin, y, { align:'right' });
+        y += 7;
+      });
+    }
+
+    doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+    doc.text(`Generado el ${new Date().toLocaleDateString('es-DO')} — AuraSpa`, pageWidth/2, 290, { align:'center' });
+
+    doc.save(`reporte-${mesesLargo[mes-1].toLowerCase()}-${anio}.pdf`);
+  };
+
+  const descargarReporteExcel = () => {
+    if (!data) return;
+    const filas: string[] = [];
+    filas.push('Reporte AuraSpa', `${mesesLargo[mes-1]} de ${anio}`, '');
+    filas.push('Resumen del mes');
+    filas.push(`Total de ventas registradas,${data.resumenMes?.totalVentas ?? 0}`);
+    filas.push(`Ingresos brutos,${data.resumenMes?.ingresosBrutos ?? 0}`);
+    filas.push(`Descuentos aplicados,${data.resumenMes?.descuentos ?? 0}`);
+    filas.push(`ITBIS total,${data.resumenMes?.itbisTotal ?? 0}`);
+    filas.push(`Ingresos netos,${data.resumenMes?.ingresosNetos ?? 0}`);
+    filas.push(`Cuentas por cobrar pendientes,${data.cxcPendientes ?? 0}`);
+    filas.push('');
+    filas.push('Servicios más vendidos');
+    filas.push('Servicio,Veces,Ingresos');
+    (data.topServicios ?? []).forEach((s: any) => filas.push(`${s.servicio},${s.veces},${s.ingresos ?? 0}`));
+    filas.push('');
+    filas.push('Citas completadas por categoría');
+    filas.push('Categoría,Cantidad');
+    (data.citasPorCategoria ?? []).forEach((c: any) => filas.push(`${c.categoria},${c.cantidad}`));
+
+    const csv = '﻿' + filas.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte-${mesesLargo[mes-1].toLowerCase()}-${anio}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--aura-beige)', padding: '40px 8%' }}>
@@ -38,7 +139,13 @@ const Reportes: React.FC = () => {
           <select value={mes} onChange={(e) => setMes(parseInt(e.target.value))} style={{ padding: '10px 15px', borderRadius: '15px', border: '1px solid #ddd', outline: 'none', background: 'white', fontSize: '0.85rem' }}>
             {meses.map((m, i) => <option key={i} value={i+1}>{m} {anio}</option>)}
           </select>
-          <button onClick={() => navigate('/dashboard/staff')} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
+          <button onClick={descargarReportePDF} disabled={!data || loading} className="btn-AuraSpa" style={{ padding: '10px 20px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', opacity: (!data||loading)?0.5:1 }}>
+            <Download size={15} /> Descargar PDF
+          </button>
+          <button onClick={descargarReporteExcel} disabled={!data || loading} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', opacity: (!data||loading)?0.5:1 }}>
+            <Download size={15} /> Descargar Excel
+          </button>
+          <button onClick={() => navigate(-1)} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
         </div>
       </div>
 

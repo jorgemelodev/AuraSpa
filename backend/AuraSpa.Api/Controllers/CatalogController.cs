@@ -31,8 +31,10 @@ namespace AuraSpa.Api.Controllers
             var q = _ctx.ItemsCatalogo.Include(i => i.Categoria)
                         .Where(i => i.Activo && i.Tipo == "Servicio");
             if (categoriaId.HasValue) q = q.Where(i => i.IdCategoria == categoriaId);
+            // Los servicios no dependen de stock por sucursal: solo se ocultan si hay
+            // un registro EXPLÍCITO marcándolos no disponibles en esa sucursal.
             if (idSucursal.HasValue)
-                q = q.Where(i => _ctx.ItemsCatalogoSucursal.Any(s => s.IdItem == i.IdItem && s.IdSucursal == idSucursal.Value && s.Disponible));
+                q = q.Where(i => !_ctx.ItemsCatalogoSucursal.Any(s => s.IdItem == i.IdItem && s.IdSucursal == idSucursal.Value && !s.Disponible));
             return Ok(await q.OrderBy(i => i.Categoria!.OrdenDisplay).ThenBy(i => i.Nombre).ToListAsync());
         }
 
@@ -41,8 +43,11 @@ namespace AuraSpa.Api.Controllers
         public async Task<IActionResult> GetProducts([FromQuery] long? idSucursal)
         {
             var q = _ctx.ItemsCatalogo.Where(i => i.Activo && i.Tipo == "Producto");
+            // Igual que en servicios: la ausencia de un registro de stock no debe
+            // ocultar el producto — solo se oculta si está EXPLÍCITAMENTE marcado
+            // como no disponible en esa sucursal.
             if (idSucursal.HasValue)
-                q = q.Where(i => _ctx.ItemsCatalogoSucursal.Any(s => s.IdItem == i.IdItem && s.IdSucursal == idSucursal.Value && s.Disponible));
+                q = q.Where(i => !_ctx.ItemsCatalogoSucursal.Any(s => s.IdItem == i.IdItem && s.IdSucursal == idSucursal.Value && !s.Disponible));
 
             var productos = await q
                 .Select(i => new

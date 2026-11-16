@@ -23,6 +23,9 @@ namespace AuraSpa.Api.Models
         [Column("token_recuperacion_expira")] public DateTime? TokenRecuperacionExpira { get; set; }
         [Column("fecha_registro")] public DateTime FechaRegistro { get; set; } = DateTime.Now;
         [Column("ultimo_acceso")] public DateTime? UltimoAcceso { get; set; }
+        [Column("totp_secret")] public string? TotpSecret { get; set; }
+        [Column("doble_factor_activo")] public bool DobleFactorActivo { get; set; } = false;
+        [Column("contrasena_provisional")] public bool ContrasenaProvisional { get; set; } = false;
         // Navegacion
         [ForeignKey("IdPerfil")] public Perfil? Perfil { get; set; }
         [ForeignKey("IdCliente")] public Cliente? Cliente { get; set; }

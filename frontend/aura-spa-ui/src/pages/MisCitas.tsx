@@ -4,17 +4,34 @@ import { Calendar, Clock, User, Star, CheckCircle, XCircle, AlertCircle, Plus, L
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../services/apiClient';
 import jsPDF from 'jspdf';
+import { getLogoBase64 } from '../utils/pdfLogo';
+import { HORAS_SPA, formatHora12, horaFueraDeHorarioDomingo } from '../utils/horasSpa';
+import SelectorFecha from '../components/SelectorFecha';
 
 interface Cita {
   idCita: number;
   servicio: string;
   categoria: string;
   especialista: string;
+  idEmpleado?: number | null;
   sucursal: string;
   fechaHora: string;
   estado: 'Pendiente' | 'Confirmada' | 'Completada' | 'Cancelada' | 'Rechazada';
   precioAcordado?: number;
 }
+
+// Igual que en Agendamiento.tsx: margen mínimo de anticipación para reprogramar el mismo día
+const MARGEN_HORAS_HOY = 2;
+const esHoy = (fecha: string) => fecha === new Date().toISOString().split('T')[0];
+const horaPasada = (fecha: string, hora: string) => {
+  if (!esHoy(fecha)) return false;
+  const [h, m] = hora.split(':').map(Number);
+  const limite = new Date();
+  limite.setHours(limite.getHours() + MARGEN_HORAS_HOY);
+  const horaSlot = new Date();
+  horaSlot.setHours(h, m, 0, 0);
+  return horaSlot < limite;
+};
 
 const estadoConfig: Record<string, { color: string; bg: string; icono: React.ReactNode; label: string }> = {
   Pendiente:  { color: '#D4AA00', bg: '#FDF8EC', icono: <AlertCircle size={14} />, label: 'Pendiente' },
@@ -33,6 +50,7 @@ const MisCitas: React.FC = () => {
   const [filtro, setFiltro] = useState<string>('Todas');
   const [cancelando, setCancelando] = useState<number | null>(null);
   const [cancelError, setCancelError] = useState<Record<number, string>>({});
+  const [cancelBloqueado72h, setCancelBloqueado72h] = useState<Record<number, boolean>>({});
 
   const [resenaModal, setResenaModal] = useState<number | null>(null);
   const [calificacion, setCalificacion] = useState(0);
@@ -48,10 +66,32 @@ const MisCitas: React.FC = () => {
   const [reprogramarError, setReprogramarError] = useState('');
   const [reprogramarEnviando, setReprogramarEnviando] = useState(false);
   const [reprogramarExito, setReprogramarExito] = useState(false);
+  const [diasBloqueados, setDiasBloqueados] = useState<Record<string, string>>({});
+  const [horasOcupadasReprogramar, setHorasOcupadasReprogramar] = useState<string[]>([]);
 
   useEffect(() => {
     fetchCitas();
+    apiClient.get('/api/core/dias-bloqueados').then(res => {
+      const mapa: Record<string, string> = {};
+      res.data.forEach((d: any) => { mapa[new Date(d.fecha).toISOString().split('T')[0]] = d.motivo; });
+      setDiasBloqueados(mapa);
+    }).catch(() => {});
   }, []);
+
+  // Consulta horas ocupadas del especialista de la cita al cambiar la nueva fecha en el modal de reprogramar
+  useEffect(() => {
+    setHorasOcupadasReprogramar([]);
+    const cita = citas.find(c => c.idCita === reprogramarModal);
+    if (!cita?.idEmpleado || !nuevaFecha) return;
+    apiClient.get(`/api/citas/disponibilidad?idEmpleado=${cita.idEmpleado}&fecha=${nuevaFecha}`)
+      .then(res => setHorasOcupadasReprogramar(res.data))
+      .catch(() => setHorasOcupadasReprogramar([]));
+  }, [reprogramarModal, nuevaFecha, citas]);
+
+  // Si la hora ya elegida quedó ocupada o pasó el margen mínimo al cambiar la fecha, se deselecciona
+  useEffect(() => {
+    if (nuevaHora && (horasOcupadasReprogramar.includes(nuevaHora) || horaPasada(nuevaFecha, nuevaHora) || horaFueraDeHorarioDomingo(nuevaFecha, nuevaHora))) setNuevaHora('');
+  }, [horasOcupadasReprogramar, nuevaFecha]);
 
   const fetchCitas = async () => {
     setLoading(true);
@@ -77,8 +117,10 @@ const MisCitas: React.FC = () => {
   };
 
   const handleCancelar = async (idCita: number) => {
+    if (!window.confirm('¿Seguro que quieres cancelar esta cita? Esta acción no se puede deshacer.')) return;
     setCancelando(idCita);
     setCancelError(prev => ({ ...prev, [idCita]: '' }));
+    setCancelBloqueado72h(prev => ({ ...prev, [idCita]: false }));
     try {
       await apiClient.put(`/api/citas/${idCita}/cancelar`);
       setCitas(prev => prev.map(c => c.idCita === idCita ? { ...c, estado: 'Cancelada' } : c));
@@ -87,17 +129,35 @@ const MisCitas: React.FC = () => {
       const cita = citas.find(c => c.idCita === idCita);
       const tiempoRestante = cita ? calcularTiempoParaCancelar(cita.fechaHora) : null;
       setCancelError(prev => ({ ...prev, [idCita]: tiempoRestante ?? (typeof msg === 'string' ? msg : 'No se pudo cancelar la cita.') }));
+      setCancelBloqueado72h(prev => ({ ...prev, [idCita]: !!tiempoRestante }));
     } finally {
       setCancelando(null);
     }
   };
 
+  const citaYaPaso = (cita: Cita) => new Date(cita.fechaHora) < new Date();
+
   const puedeReprogramar = (cita: Cita) =>
-    (cita.estado === 'Pendiente' || cita.estado === 'Confirmada') &&
-    (new Date(cita.fechaHora).getTime() - Date.now()) / 3600000 >= 72;
+    (cita.estado === 'Pendiente' || cita.estado === 'Confirmada') && !citaYaPaso(cita);
+
+  // Cuando falta menos de 72h, calcula el déficit para explicar cuánto falta para el corte de las 72h
+  const calcularTiempoParaReprogramar = (fechaHora: string) => {
+    const minutosHastaCita = Math.floor((new Date(fechaHora).getTime() - Date.now()) / 60000);
+    const minutosFaltantes = 72 * 60 - minutosHastaCita;
+    if (minutosFaltantes <= 0) return null;
+    const horas = Math.floor(minutosFaltantes / 60);
+    const minutos = minutosFaltantes % 60;
+    return `Podrás reprogramar esta cita en ${horas} horas y ${minutos} minutos.`;
+  };
 
   const handleReprogramar = async () => {
     if (reprogramarModal === null || !nuevaFecha || !nuevaHora) return;
+    if (horaFueraDeHorarioDomingo(nuevaFecha, nuevaHora)) { setReprogramarError('Los domingos atendemos de 10:00 AM a 4:00 PM.'); return; }
+    const citaOriginal = citas.find(c => c.idCita === reprogramarModal);
+    if (citaOriginal) {
+      const tiempoRestante = calcularTiempoParaReprogramar(citaOriginal.fechaHora);
+      if (tiempoRestante) { setReprogramarError(tiempoRestante); return; }
+    }
     setReprogramarEnviando(true);
     setReprogramarError('');
     try {
@@ -113,7 +173,9 @@ const MisCitas: React.FC = () => {
       }, 2000);
     } catch (err: any) {
       const msg = err.response?.data;
-      setReprogramarError(typeof msg === 'string' ? msg : 'No se pudo reprogramar la cita.');
+      const cita = citas.find(c => c.idCita === reprogramarModal);
+      const tiempoRestante = cita ? calcularTiempoParaReprogramar(cita.fechaHora) : null;
+      setReprogramarError(tiempoRestante ?? (typeof msg === 'string' ? msg : 'No se pudo reprogramar la cita.'));
     } finally {
       setReprogramarEnviando(false);
     }
@@ -140,7 +202,7 @@ const MisCitas: React.FC = () => {
     }
   };
 
-  const descargarComprobante = (cita: Cita) => {
+  const descargarComprobante = async (cita: Cita) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -153,13 +215,18 @@ const MisCitas: React.FC = () => {
     doc.setFillColor(31, 45, 61);
     doc.rect(0, 0, pageWidth, 45, 'F');
 
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(255, 255, 255);
-    doc.text('AURA', margin, 22);
-    const auraWidth = doc.getTextWidth('AURA');
-    doc.setTextColor(151, 138, 221);
-    doc.text(' Spa', margin + auraWidth, 22);
+    try {
+      const logo = await getLogoBase64();
+      doc.addImage(logo, 'PNG', margin, 4, 18, 20.5);
+    } catch {
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text('AURA', margin, 22);
+      const auraWidth = doc.getTextWidth('AURA');
+      doc.setTextColor(151, 138, 221);
+      doc.text(' Spa', margin + auraWidth, 22);
+    }
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
@@ -299,6 +366,10 @@ const MisCitas: React.FC = () => {
   };
 
   const citasFiltradas = filtro === 'Todas' ? citas : citas.filter(c => c.estado === filtro);
+  const CITAS_POR_PAGINA = 10;
+  const [paginaActual, setPaginaActual] = useState(1);
+  const totalPaginas = Math.max(1, Math.ceil(citasFiltradas.length / CITAS_POR_PAGINA));
+  const citasPagina = citasFiltradas.slice((paginaActual - 1) * CITAS_POR_PAGINA, paginaActual * CITAS_POR_PAGINA);
 
   const formatFechaHora = (fechaHora: string) => {
     const d = new Date(fechaHora);
@@ -325,7 +396,7 @@ const MisCitas: React.FC = () => {
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', flexWrap: 'wrap' }}>
         {['Todas', 'Pendiente', 'Confirmada', 'Completada', 'Cancelada'].map(f => (
-          <button key={f} onClick={() => setFiltro(f)} style={{
+          <button key={f} onClick={() => { setFiltro(f); setPaginaActual(1); }} style={{
             padding: '8px 18px', borderRadius: '30px', border: '1px solid',
             borderColor: filtro === f ? 'var(--aura-lavender)' : '#ddd',
             background: filtro === f ? 'var(--aura-lavender)' : 'white',
@@ -348,7 +419,7 @@ const MisCitas: React.FC = () => {
                 Agendar mi primera cita
               </button>
             </div>
-          ) : citasFiltradas.map(cita => {
+          ) : citasPagina.map(cita => {
             const config = estadoConfig[cita.estado] ?? estadoConfig['Pendiente'];
             const { fecha, hora } = formatFechaHora(cita.fechaHora);
             return (
@@ -403,7 +474,7 @@ const MisCitas: React.FC = () => {
                         📅 Reprogramar
                       </button>
                     )}
-                    {(cita.estado === 'Pendiente' || cita.estado === 'Confirmada') && (
+                    {(cita.estado === 'Pendiente' || cita.estado === 'Confirmada') && !citaYaPaso(cita) && (
                       <>
                         <button
                           onClick={() => handleCancelar(cita.idCita)}
@@ -413,9 +484,19 @@ const MisCitas: React.FC = () => {
                           {cancelando === cita.idCita ? <Loader2 size={14} className="animate-spin" /> : 'Cancelar cita'}
                         </button>
                         {cancelError[cita.idCita] && (
-                          <p style={{ color: '#c62828', fontSize: '0.82rem', margin: 0, textAlign: 'right', maxWidth: '220px' }}>
-                            {cancelError[cita.idCita]}
-                          </p>
+                          <div style={{ textAlign: 'right', maxWidth: '240px' }}>
+                            <p style={{ color: '#c62828', fontSize: '0.82rem', margin: 0 }}>
+                              {cancelError[cita.idCita]}
+                            </p>
+                            {cancelBloqueado72h[cita.idCita] && (
+                              <p style={{ color: 'var(--aura-gray)', fontSize: '0.78rem', margin: '6px 0 0' }}>
+                                ¿Tienes una emergencia? Contáctanos directamente:{' '}
+                                <a href="tel:8090000000" style={{ color: 'var(--aura-lavender)', fontWeight: '600', textDecoration: 'none' }}>
+                                  📞 809-000-0000
+                                </a>
+                              </p>
+                            )}
+                          </div>
                         )}
                       </>
                     )}
@@ -424,6 +505,20 @@ const MisCitas: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {!loading && !error && citasFiltradas.length > CITAS_POR_PAGINA && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginTop: '25px' }}>
+          <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginaActual === 1}
+            className="btn-outline-aura" style={{ padding: '8px 18px', fontSize: '0.85rem', opacity: paginaActual === 1 ? 0.5 : 1 }}>
+            ← Anterior
+          </button>
+          <span style={{ color: 'var(--aura-gray)', fontSize: '0.88rem' }}>Página {paginaActual} de {totalPaginas}</span>
+          <button onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))} disabled={paginaActual === totalPaginas}
+            className="btn-outline-aura" style={{ padding: '8px 18px', fontSize: '0.85rem', opacity: paginaActual === totalPaginas ? 0.5 : 1 }}>
+            Siguiente →
+          </button>
         </div>
       )}
 
@@ -477,14 +572,35 @@ const MisCitas: React.FC = () => {
                 </p>
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', color: 'var(--aura-gray)', fontWeight: 500, fontSize: '0.9rem' }}>Nueva fecha</label>
-                  <input type="date" value={nuevaFecha} onChange={(e) => setNuevaFecha(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    style={{ width: '100%', padding: '12px 15px', borderRadius: '15px', border: '1px solid #ddd', outline: 'none', background: '#fcfcfc', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                  <SelectorFecha value={nuevaFecha} onChange={(val) => { setReprogramarError(''); setNuevaFecha(val); }}
+                    diasBloqueados={diasBloqueados} />
                 </div>
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', color: 'var(--aura-gray)', fontWeight: 500, fontSize: '0.9rem' }}>Nueva hora</label>
-                  <input type="time" value={nuevaHora} onChange={(e) => setNuevaHora(e.target.value)}
-                    style={{ width: '100%', padding: '12px 15px', borderRadius: '15px', border: '1px solid #ddd', outline: 'none', background: '#fcfcfc', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                  <select value={nuevaHora} onChange={(e) => setNuevaHora(e.target.value)} disabled={!nuevaFecha}
+                    style={{ width: '100%', padding: '12px 15px', borderRadius: '15px', border: '1px solid #ddd', outline: 'none', background: '#fcfcfc', fontSize: '0.9rem', boxSizing: 'border-box', cursor: nuevaFecha ? 'pointer' : 'not-allowed' }}>
+                    <option value="">Selecciona una hora...</option>
+                    {HORAS_SPA.map(h => {
+                      const ocupada = horasOcupadasReprogramar.includes(h);
+                      const pasada = horaPasada(nuevaFecha, h);
+                      const fueraDomingo = horaFueraDeHorarioDomingo(nuevaFecha, h);
+                      return (
+                        <option key={h} value={h} disabled={ocupada || pasada || fueraDomingo}>
+                          {formatHora12(h)}{ocupada ? ' (ocupada)' : pasada ? ' (no disponible)' : fueraDomingo ? ' (fuera de horario)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {nuevaFecha && new Date(`${nuevaFecha}T00:00`).getDay() === 0 && (
+                    <p style={{ fontSize: '0.78rem', color: 'var(--aura-lavender)', marginTop: '8px' }}>
+                      Los domingos atendemos de 10:00 AM a 4:00 PM.
+                    </p>
+                  )}
+                  {nuevaFecha && esHoy(nuevaFecha) && (
+                    <p style={{ fontSize: '0.78rem', color: 'var(--aura-gray)', marginTop: '8px' }}>
+                      Para hoy, solo se pueden reprogramar horas con al menos {MARGEN_HORAS_HOY} horas de anticipación.
+                    </p>
+                  )}
                 </div>
                 {reprogramarError && <p style={{ color: '#c62828', fontSize: '0.82rem', marginBottom: '15px', textAlign: 'center' }}>{reprogramarError}</p>}
                 <div style={{ display: 'flex', gap: '10px' }}>

@@ -43,6 +43,14 @@ namespace AuraSpa.Api.Data
         public DbSet<ItemCatalogoSucursal> ItemsCatalogoSucursal { get; set; }
         public DbSet<CuentaPorCobrar>      CuentasPorCobrar      { get; set; }
         public DbSet<DiaBloqueado>         DiasBloqueados        { get; set; }
+        // Aurora — biometría por descriptores (sin fotos)
+        public DbSet<RostroDescriptor>     RostrosDescriptores   { get; set; }
+        public DbSet<Paquete>              Paquetes              { get; set; }
+        public DbSet<ExpedienteClinico>    ExpedientesClinicos   { get; set; }
+        public DbSet<Consentimiento>       Consentimientos       { get; set; }
+        public DbSet<Cotizacion>           Cotizaciones          { get; set; }
+        public DbSet<CotizacionDetalle>    CotizacionDetalles    { get; set; }
+        public DbSet<ClientePaquete>       ClientesPaquetes      { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

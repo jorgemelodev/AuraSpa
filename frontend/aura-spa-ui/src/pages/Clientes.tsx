@@ -51,12 +51,16 @@ const Clientes: React.FC = () => {
     setGuardando(true);
     setFormError('');
     try {
-      // INC-W25: registro manual de cliente por parte del staff
+      // Contraseña temporal aleatoria — nunca se muestra ni se reutiliza entre clientes.
+      const passwordTemporal = Math.random().toString(36).slice(-8) + 'Aa1!';
       await apiClient.post('/api/auth/register', {
         nombre, apellido, email, telefono,
-        password: 'AuraSpa2026!', // contraseña temporal
+        password: passwordTemporal,
         nombrePerfil: 'Cliente',
       });
+      // El cliente nunca ve esta contraseña: le enviamos de inmediato un correo
+      // para que establezca la suya propia (reutiliza el flujo de "olvidé mi contraseña").
+      try { await apiClient.post('/api/auth/recuperar-contrasena', { email }); } catch { /* no bloquea la creación */ }
       setModalAgregar(false);
       setNombre(''); setApellido(''); setEmail(''); setTelefono('');
       fetchClientes(); // Recargar la lista
@@ -88,7 +92,7 @@ const Clientes: React.FC = () => {
           <button className="btn-AuraSpa" onClick={() => setModalAgregar(true)} style={{ padding: '10px 20px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Plus size={16} /> Nuevo Cliente
           </button>
-          <button onClick={() => navigate('/dashboard/staff')} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
+          <button onClick={() => navigate(-1)} className="btn-outline-aura" style={{ padding: '10px 20px', fontSize: '0.85rem' }}>← Volver</button>
         </div>
       </div>
 
@@ -140,16 +144,16 @@ const Clientes: React.FC = () => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px', color: 'var(--aura-gray)', fontWeight: '500', fontSize: '0.85rem' }}>Nombre</label>
-                  <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} required style={inputStyle} />
+                  <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value.replace(/[^a-záéíóúñüA-ZÁÉÍÓÚÑÜ\s'-]/g, ''))} required style={inputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px', color: 'var(--aura-gray)', fontWeight: '500', fontSize: '0.85rem' }}>Apellido</label>
-                  <input type="text" value={apellido} onChange={(e) => setApellido(e.target.value)} required style={inputStyle} />
+                  <input type="text" value={apellido} onChange={(e) => setApellido(e.target.value.replace(/[^a-záéíóúñüA-ZÁÉÍÓÚÑÜ\s'-]/g, ''))} required style={inputStyle} />
                 </div>
               </div>
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', marginBottom: '6px', color: 'var(--aura-gray)', fontWeight: '500', fontSize: '0.85rem' }}>Teléfono</label>
-                <input type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} required style={inputStyle} placeholder="809-555-0000" />
+                <input type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, '').slice(0, 10))} required style={inputStyle} placeholder="809-555-0000" />
               </div>
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '6px', color: 'var(--aura-gray)', fontWeight: '500', fontSize: '0.85rem' }}>Correo electrónico</label>

@@ -6,6 +6,16 @@ namespace AuraSpa.Api.DTOs
         public string Password { get; set; } = string.Empty;
     }
 
+    public class Verificar2FADto
+    {
+        public string Codigo { get; set; } = string.Empty;
+    }
+
+    public class ActivarDosFADto
+    {
+        public bool Activo { get; set; } = true;
+    }
+
     public class RegisterDto
     {
         public string  Nombre          { get; set; } = string.Empty;
@@ -95,4 +105,5 @@ namespace AuraSpa.Api.DTOs
         public string Nombre   { get; set; } = string.Empty;
         public string Apellido { get; set; } = string.Empty;
         public string? Telefono { get; set; }
+        public string? Email    { get; set; }
     }

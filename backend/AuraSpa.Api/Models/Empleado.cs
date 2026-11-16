@@ -15,6 +15,9 @@ namespace AuraSpa.Api.Models
         [Column("email_empresarial")] public string? EmailEmpresarial { get; set; }
         [Column("telefono")] public string? Telefono { get; set; }
         [Column("tipo_empleado")] public string TipoEmpleado { get; set; } = "Especialista";
+        [Column("codigo_empleado")] public string? CodigoEmpleado { get; set; }
+        [Column("sueldo", TypeName = "decimal(18,2)")] public decimal? Sueldo { get; set; }
+        [Column("direccion")] public string? Direccion { get; set; }
         [Column("activo")] public bool Activo { get; set; } = true;
         [Column("fecha_ingreso")] public DateOnly FechaIngreso { get; set; } = DateOnly.FromDateTime(DateTime.Now);
         [Column("id_sucursal")] public long IdSucursal { get; set; }

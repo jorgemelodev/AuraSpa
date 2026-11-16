@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard, ArrowLeft } from 'lucide-react';
+import { CreditCard, ArrowLeft, Send } from 'lucide-react';
 import apiClient from '../services/apiClient';
 
 interface CxcApi { id:number; ventaId:string; clienteNombre:string; montoTotal:number; montoPagado:number; saldoPendiente:number; fechaVencimiento:string; estado:string; }
@@ -18,7 +18,10 @@ const CuentasPorCobrar: React.FC = () => {
   const [cxcEstadoFiltro, setCxcEstadoFiltro] = useState('Todos');
   const [abonoModal, setAbonoModal] = useState<{id:number;nombre:string;saldo:number}|null>(null);
   const [abonoMonto, setAbonoMonto] = useState('');
+  const [abonoError, setAbonoError] = useState('');
   const [cxcData, setCxcData] = useState<CxcApi[]>([]);
+  const [recordatorioEnviando, setRecordatorioEnviando] = useState<number|null>(null);
+  const [recordatorioMsg, setRecordatorioMsg] = useState<{id:number; ok:boolean; texto:string}|null>(null);
 
   const cargarCxc = useCallback(async () => {
     try {
@@ -39,15 +42,32 @@ const CuentasPorCobrar: React.FC = () => {
     return dias > 0 ? Math.round(cxc.saldoPendiente * 0.03 * dias) : 0; // 3% mensual
   };
 
+  const enviarRecordatorio = async (id:number) => {
+    setRecordatorioEnviando(id); setRecordatorioMsg(null);
+    try {
+      await apiClient.post(`/api/caja/cxc/${id}/recordatorio`);
+      setRecordatorioMsg({id, ok:true, texto:'Recordatorio enviado.'});
+    } catch (err:any) {
+      const msg = err.response?.data;
+      setRecordatorioMsg({id, ok:false, texto: typeof msg?.mensaje==='string' ? msg.mensaje : (typeof msg==='string' ? msg : 'No se pudo enviar el recordatorio.')});
+    } finally {
+      setRecordatorioEnviando(null);
+    }
+  };
+
   const registrarAbono = async () => {
     if(!abonoModal||!abonoMonto) return;
     const monto = parseFloat(abonoMonto);
-    if(isNaN(monto)||monto<=0||monto>abonoModal.saldo) return;
+    setAbonoError('');
+    if(isNaN(monto)||monto<=0){ setAbonoError('Ingresa un monto válido.'); return; }
+    if(monto>abonoModal.saldo){ setAbonoError(`El monto supera el saldo pendiente (RD$ ${fmt(abonoModal.saldo)}).`); return; }
     try {
       await apiClient.post(`/api/caja/cxc/${abonoModal.id}/abono`, { monto });
       await cargarCxc();
-    } catch {}
-    setAbonoModal(null); setAbonoMonto('');
+      setAbonoModal(null); setAbonoMonto('');
+    } catch (err:any) {
+      setAbonoError(typeof err.response?.data==='string' ? err.response.data : 'No se pudo registrar el abono.');
+    }
   };
 
   const cxcFiltrados = cxcData.filter(cx =>
@@ -70,12 +90,13 @@ const CuentasPorCobrar: React.FC = () => {
             </div>
             <div style={{marginBottom:'20px'}}>
               <label style={labelStyle}>Monto del abono (RD$)</label>
-              <input type="text" value={abonoMonto} onChange={e=>{if(/^\d*\.?\d*$/.test(e.target.value))setAbonoMonto(e.target.value);}}
+              <input type="text" value={abonoMonto} onChange={e=>{if(/^\d*\.?\d*$/.test(e.target.value)){setAbonoMonto(e.target.value);setAbonoError('');}}}
                 placeholder="0.00" style={inputStyle} autoFocus/>
+              {abonoError && <p style={{color:'#ef4444',fontSize:'0.8rem',marginTop:'8px'}}>{abonoError}</p>}
             </div>
             <div style={{display:'flex',gap:'10px'}}>
               <button onClick={registrarAbono} className="btn-AuraSpa" style={{flex:1,padding:'12px'}}>Registrar</button>
-              <button onClick={()=>{setAbonoModal(null);setAbonoMonto('');}} className="btn-outline-aura" style={{flex:1,padding:'12px'}}>Cancelar</button>
+              <button onClick={()=>{setAbonoModal(null);setAbonoMonto('');setAbonoError('');}} className="btn-outline-aura" style={{flex:1,padding:'12px'}}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -88,7 +109,7 @@ const CuentasPorCobrar: React.FC = () => {
           </h2>
           <p style={{ color:'var(--aura-gray)', margin:0, fontSize:'0.9rem' }}>Gestiona los pagos pendientes y abonos de clientes.</p>
         </div>
-        <button onClick={() => navigate('/dashboard/staff')} className="btn-outline-aura" style={{ padding:'10px 20px', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'6px' }}>
+        <button onClick={() => navigate(-1)} className="btn-outline-aura" style={{ padding:'10px 20px', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'6px' }}>
           <ArrowLeft size={16} /> Volver
         </button>
       </div>
@@ -133,10 +154,21 @@ const CuentasPorCobrar: React.FC = () => {
                   </td>
                   <td style={{padding:'10px 14px'}}>
                     {c.saldoPendiente>0&&(
-                      <button onClick={()=>setAbonoModal({id:c.id,nombre:c.clienteNombre,saldo:c.saldoPendiente})}
-                        className="btn-AuraSpa" style={{padding:'5px 14px',fontSize:'0.78rem',whiteSpace:'nowrap'}}>
-                        Registrar Abono
-                      </button>
+                      <div style={{display:'flex',flexDirection:'column',gap:'6px',alignItems:'flex-start'}}>
+                        <div style={{display:'flex',gap:'8px'}}>
+                          <button onClick={()=>setAbonoModal({id:c.id,nombre:c.clienteNombre,saldo:c.saldoPendiente})}
+                            className="btn-AuraSpa" style={{padding:'5px 14px',fontSize:'0.78rem',whiteSpace:'nowrap'}}>
+                            Registrar Abono
+                          </button>
+                          <button onClick={()=>enviarRecordatorio(c.id)} disabled={recordatorioEnviando===c.id}
+                            className="btn-outline-aura" style={{padding:'5px 14px',fontSize:'0.78rem',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:'5px'}}>
+                            <Send size={12}/> {recordatorioEnviando===c.id?'Enviando…':'Enviar recordatorio'}
+                          </button>
+                        </div>
+                        {recordatorioMsg?.id===c.id && (
+                          <span style={{fontSize:'0.75rem',color:recordatorioMsg.ok?'#22c55e':'#ef4444'}}>{recordatorioMsg.texto}</span>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, ShoppingCart, Sparkles, Package, Lock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Search, ShoppingCart, Sparkles, Package, Lock, Clock } from 'lucide-react';
+import { useAuth, saludoGenero } from '../context/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import apiClient from '../services/apiClient';
 
@@ -120,7 +120,7 @@ const Catalog: React.FC = () => {
         <div>
           <h2 style={{ color: 'var(--aura-navy)', fontWeight: 'bold', margin: 0 }}>Experiencias Aura</h2>
           <p style={{ color: '#666', fontSize: '0.9rem', margin: 0 }}>
-            {user ? <>Bienvenido/a, <strong>{user.nombre}</strong> — Sucursal Principal</> : 'Encuentra el tratamiento ideal en Sucursal Principal.'}
+            {user ? <>{saludoGenero(user)}, <strong>{user.nombre}</strong> — Sucursal Principal</> : 'Encuentra el tratamiento ideal en Sucursal Principal.'}
           </p>
         </div>
         <div style={{ position: 'relative', flexGrow: 1, maxWidth: '400px' }}>
@@ -238,6 +238,11 @@ const Catalog: React.FC = () => {
                   {item.stock !== undefined && (
                     <span style={{ color: item.stock > 0 ? '#22c55e' : '#ef4444', fontSize: '0.8rem', fontWeight: '600' }}>
                       {item.stock > 0 ? `Stock: ${item.stock}` : 'Sin stock'}
+                    </span>
+                  )}
+                  {item.tipo === 'Servicio' && item.duracionMinutos != null && (
+                    <span style={{ color: '#888', fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={13} /> {item.duracionMinutos} min
                     </span>
                   )}
                 </div>

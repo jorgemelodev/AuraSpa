@@ -99,6 +99,9 @@ const Registro: React.FC = () => {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--aura-beige)', padding: '20px' }}>
       <div className="card-aura animate-fade-in" style={{ width: '100%', maxWidth: '500px', padding: '50px', borderRadius: '30px' }}>
+        <div style={{ textAlign: 'center' }}>
+          <img src="/Logo_sin_letras.png" style={{ maxWidth: '90px' }} alt="AuraSpa" />
+        </div>
         <h2 style={{ textAlign: 'center', color: 'var(--aura-navy)', fontWeight: 'bold', marginBottom: '8px' }}>Crear cuenta</h2>
         <p style={{ textAlign: 'center', color: 'var(--aura-gray)', fontSize: '0.9rem', marginBottom: '30px' }}>
           Únete a AuraSpa y agenda tus servicios fácilmente
@@ -114,18 +117,18 @@ const Registro: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', color: 'var(--aura-gray)', fontWeight: '500', fontSize: '0.9rem' }}>Nombre</label>
-              <input type="text" placeholder="Tu nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} required style={inputStyle} />
+              <input type="text" placeholder="Tu nombre" value={nombre} onChange={(e) => setNombre(soloLetras(e.target.value))} required style={inputStyle} />
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', color: 'var(--aura-gray)', fontWeight: '500', fontSize: '0.9rem' }}>Apellido</label>
-              <input type="text" placeholder="Tu apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} required style={inputStyle} />
+              <input type="text" placeholder="Tu apellido" value={apellido} onChange={(e) => setApellido(soloLetras(e.target.value))} required style={inputStyle} />
             </div>
           </div>
 
           {/* INC-W01: teléfono requerido */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', marginBottom: '8px', color: 'var(--aura-gray)', fontWeight: '500', fontSize: '0.9rem' }}>Teléfono</label>
-            <input type="tel" placeholder="809-555-0000" value={telefono} onChange={(e) => setTelefono(e.target.value)} required style={inputStyle} />
+            <input type="tel" placeholder="809-555-0000" value={telefono} onChange={(e) => setTelefono(soloNums9(e.target.value))} required style={inputStyle} />
           </div>
 
           <div style={{ marginBottom: '20px' }}>

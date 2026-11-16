@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Loader2 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
+import apiClient from '../services/apiClient';
 
 const Verificacion2FA: React.FC = () => {
   const navigate  = useNavigate();
@@ -10,53 +12,96 @@ const Verificacion2FA: React.FC = () => {
   const [codigo,  setCodigo]  = useState('');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
-  const [reenvios, setReenvios] = useState(0);
-  const [reenviado, setReenviado] = useState(false);
+  const cajasRef = useRef<Array<HTMLInputElement | null>>([]);
+
+  const [qrUrl, setQrUrl] = useState('');
+  const [loadingQr, setLoadingQr] = useState(true);
+  const [qrError, setQrError] = useState('');
 
   // Recuperar los datos guardados temporalmente en sesión
   const tokenTemp  = sessionStorage.getItem('aura_2fa_token');
   const userTemp   = sessionStorage.getItem('aura_2fa_usuario');
+  // 'configurar' = primer login, se muestra el QR para activar 2FA.
+  // 'verificar'  = la cuenta ya tiene 2FA activo, solo se pide el código (sin QR).
+  const modo = sessionStorage.getItem('aura_2fa_modo') || 'configurar';
+  const esConfiguracion = modo === 'configurar';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!tokenTemp || !esConfiguracion) { setLoadingQr(false); return; }
+    apiClient.get('/api/auth/2fa/setup', { headers: { Authorization: `Bearer ${tokenTemp}` } })
+      .then(res => setQrUrl(res.data.url))
+      .catch(() => setQrError('No se pudo generar el código QR. Intenta de nuevo más tarde.'))
+      .finally(() => setLoadingQr(false));
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (codigo.length !== 6) { setError('El código debe tener 6 dígitos.'); return; }
+    if (!tokenTemp || !userTemp) { setError('Sesión expirada. Inicia sesión de nuevo.'); return; }
+
     setLoading(true); setError('');
+    try {
+      await apiClient.post('/api/auth/2fa/verificar', { codigo }, { headers: { Authorization: `Bearer ${tokenTemp}` } });
 
-    // Simulación académica: código "123456" siempre válido en modo demo
-    // En producción: POST /api/auth/verificar-2fa { codigo, token: tokenTemp }
-    setTimeout(() => {
-      setLoading(false);
-      if (codigo === '123456') {
-        if (tokenTemp && userTemp) {
-          const usuario = JSON.parse(userTemp);
-          sessionStorage.removeItem('aura_2fa_token');
-          sessionStorage.removeItem('aura_2fa_usuario');
-          sessionStorage.setItem('aura_cerro_sesion', '0');
-          login(tokenTemp, usuario);
-          const p = usuario.perfil;
-          navigate(['Admin','Cajero','Especialista'].includes(p) ? '/dashboard/staff' : '/dashboard/client');
-        } else {
-          setError('Sesión expirada. Inicia sesión de nuevo.');
-        }
-      } else {
-        setError('Código incorrecto. Intenta de nuevo.');
+      const usuario = JSON.parse(userTemp);
+      sessionStorage.removeItem('aura_2fa_token');
+      sessionStorage.removeItem('aura_2fa_usuario');
+      sessionStorage.removeItem('aura_2fa_modo');
+      sessionStorage.setItem('aura_cerro_sesion', '0');
+      login(tokenTemp, usuario);
+      if (usuario.contrasenaProvisional) {
+        navigate('/perfil', { state: { forzarCambioPassword: true } });
+        return;
       }
-    }, 1000);
+      const p = usuario.perfil;
+      navigate(['Admin','Cajero','Especialista'].includes(p) ? '/dashboard/staff' : '/dashboard/client');
+    } catch (err: any) {
+      const msg = err.response?.data;
+      setError(typeof msg === 'string' ? msg : 'Código incorrecto. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const reenviarCodigo = () => {
-    if (reenvios >= 3) { setError('Límite de reenvíos alcanzado. Espera 10 minutos.'); return; }
-    setReenvios(r => r + 1);
-    setError('');
-    setReenviado(true);
-    setTimeout(() => setReenviado(false), 3000);
-  };
-
-  // Manejar input: solo 6 dígitos
-  const handleCodigo = (v: string) => {
-    const soloNums = v.replace(/\D/g, '').slice(0, 6);
-    setCodigo(soloNums);
+  // Cada recuadro acepta un solo dígito; al escribir, el foco avanza automáticamente.
+  const handleCajaChange = (indice: number, valor: string) => {
+    const digitos = valor.replace(/\D/g, '');
+    if (!digitos) {
+      // Se borró el dígito de esta caja
+      const nuevo = codigo.slice(0, indice) + codigo.slice(indice + 1);
+      setCodigo(nuevo);
+      if (error) setError('');
+      return;
+    }
+    // Toma el último dígito escrito (cubre el caso de pegar varios caracteres en una sola caja)
+    const ultimo = digitos[digitos.length - 1];
+    const nuevo = (codigo.slice(0, indice) + ultimo + codigo.slice(indice + 1)).slice(0, 6);
+    setCodigo(nuevo);
     if (error) setError('');
+    if (indice < 5) cajasRef.current[indice + 1]?.focus();
+  };
+
+  const handleCajaKeyDown = (indice: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !codigo[indice] && indice > 0) {
+      // Caja vacía + Backspace: retrocede y borra el dígito anterior
+      const nuevo = codigo.slice(0, indice - 1) + codigo.slice(indice);
+      setCodigo(nuevo);
+      cajasRef.current[indice - 1]?.focus();
+    } else if (e.key === 'ArrowLeft' && indice > 0) {
+      cajasRef.current[indice - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && indice < 5) {
+      cajasRef.current[indice + 1]?.focus();
+    }
+  };
+
+  const handlePegado = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pegado = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pegado) return;
+    e.preventDefault();
+    setCodigo(pegado);
+    if (error) setError('');
+    const siguiente = Math.min(pegado.length, 5);
+    cajasRef.current[siguiente]?.focus();
   };
 
   return (
@@ -72,16 +117,29 @@ const Verificacion2FA: React.FC = () => {
         <h2 style={{ color:'var(--aura-navy)', fontWeight:'bold', marginBottom:'8px' }}>
           Verificación en dos pasos
         </h2>
-        <p style={{ color:'var(--aura-gray)', fontSize:'0.9rem', marginBottom:'30px' }}>
-          Ingresa el código de 6 dígitos de tu aplicación de autenticación o el que llegó a tu correo.
+        <p style={{ color:'var(--aura-gray)', fontSize:'0.9rem', marginBottom:'24px' }}>
+          {esConfiguracion
+            ? 'Escanea este código con Google Authenticator y luego ingresa el código de 6 dígitos que genera.'
+            : 'Ingresa el código de 6 dígitos que genera tu app autenticadora para completar el inicio de sesión.'}
         </p>
 
-        {/* Demo notice */}
-        <div style={{ background:'#fffbeb', border:'1px solid #fcd34d', borderRadius:'14px', padding:'10px 16px', marginBottom:'24px' }}>
-          <p style={{ color:'#92400e', fontSize:'0.82rem', margin:0 }}>
-            Modo demo: usa el código <strong>123456</strong> para continuar.
-          </p>
-        </div>
+        {esConfiguracion && (
+          <div style={{ display:'flex', justifyContent:'center', marginBottom:'24px' }}>
+            {loadingQr ? (
+              <div style={{ width:'180px', height:'180px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <Loader2 className="animate-spin" size={28} color="var(--aura-lavender)" />
+              </div>
+            ) : qrError ? (
+              <div style={{ background:'#ffebee', color:'#c62828', padding:'13px', borderRadius:'14px', fontSize:'0.85rem' }}>
+                {qrError}
+              </div>
+            ) : qrUrl ? (
+              <div style={{ padding:'16px', background:'#ffffff', borderRadius:'16px', border:'1px solid #eee' }}>
+                <QRCodeSVG value={qrUrl} size={180} />
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {error && (
           <div style={{ background:'#ffebee', color:'#c62828', padding:'13px', borderRadius:'14px', marginBottom:'20px', fontSize:'0.88rem' }}>
@@ -90,47 +148,32 @@ const Verificacion2FA: React.FC = () => {
         )}
 
         <form onSubmit={handleSubmit}>
-          {/* Inputs individuales para cada dígito — estilo visual */}
+          {/* 6 recuadros individuales, estilo bancario — un dígito por caja */}
           <div style={{ display:'flex', gap:'10px', justifyContent:'center', marginBottom:'28px' }}>
             {Array.from({length:6}).map((_,i) => (
-              <input key={i} type="text" readOnly value={codigo[i] || ''}
+              <input
+                key={i}
+                ref={el => { cajasRef.current[i] = el; }}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                autoFocus={i === 0}
+                value={codigo[i] || ''}
+                onChange={e => handleCajaChange(i, e.target.value)}
+                onKeyDown={e => handleCajaKeyDown(i, e)}
+                onPaste={handlePegado}
                 style={{
-                  width:'48px', height:'56px', textAlign:'center', fontSize:'1.4rem', fontWeight:'bold',
-                  borderRadius:'12px', border:`2px solid ${codigo[i]?'var(--aura-lavender)':'#ddd'}`,
-                  outline:'none', background: codigo[i]?'#f0ecff':'#fcfcfc', color:'var(--aura-navy)'
+                  width:'60px', height:'60px', textAlign:'center', fontSize:'1.5rem', fontWeight:'bold',
+                  borderRadius:'12px', border:`2px solid ${codigo[i] ? 'var(--aura-lavender)' : '#ddd'}`,
+                  outline:'none', background: codigo[i] ? '#f0ecff' : '#fcfcfc', color:'var(--aura-navy)'
                 }}/>
             ))}
           </div>
-
-          {/* Input oculto que captura el valor real */}
-          <input
-            type="text"
-            value={codigo}
-            onChange={e => handleCodigo(e.target.value)}
-            placeholder="Escribe tu código de 6 dígitos"
-            inputMode="numeric"
-            autoFocus
-            style={{
-              width:'100%', padding:'14px', borderRadius:'15px', border:'1px solid #ddd',
-              outline:'none', textAlign:'center', letterSpacing:'0.3em',
-              fontSize:'1.1rem', marginBottom:'20px', boxSizing:'border-box'
-            }}
-          />
 
           <button type="submit" className="btn-AuraSpa" style={{ width:'100%', padding:'15px', fontSize:'1.05rem' }} disabled={loading || codigo.length !== 6}>
             {loading ? <Loader2 className="animate-spin" size={22} style={{ margin:'0 auto', display:'block' }}/> : 'Verificar'}
           </button>
         </form>
-
-        <button onClick={reenviarCodigo} style={{ marginTop:'20px', background:'none', border:'none', color:'var(--aura-lavender)', cursor:'pointer', fontSize:'0.88rem', display:'flex', alignItems:'center', gap:'6px', margin:'20px auto 0' }}>
-          <RefreshCw size={15}/> Reenviar código
-        </button>
-
-        {reenviado && (
-          <div style={{ background:'#f0ecff', color:'var(--aura-lavender)', borderRadius:'14px', padding:'10px 16px', marginTop:'16px', fontSize:'0.85rem', fontWeight:'500' }}>
-            📨 Código reenviado. Usa 123456 para continuar (modo demo).
-          </div>
-        )}
 
         <p style={{ marginTop:'20px', fontSize:'0.82rem', color:'#aaa' }}>
           ¿Problemas?{' '}
