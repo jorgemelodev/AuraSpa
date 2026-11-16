@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, MapPin, Calendar, CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 import apiClient from '../services/apiClient';
+import { useAuth } from '../context/AuthContext';
+import { SUCURSALES_DEMO, leerPedidosDemo, actualizarPedidoDemo } from '../utils/demo';
 
 interface Reserva {
   idApartado: number;
@@ -15,6 +17,7 @@ interface Reserva {
   estado: 'Pendiente' | 'Retirado' | 'Cancelado';
   fechaReserva: string;
   notas?: string;
+  referencia?: string; // solo en Modo Demo: pedido local al que pertenece la línea
 }
 
 interface Orden {
@@ -52,8 +55,30 @@ const agruparEnOrdenes = (reservas: Reserva[]): Orden[] => {
   return Array.from(mapa.values()).sort((a, b) => new Date(b.fechaReserva).getTime() - new Date(a.fechaReserva).getTime());
 };
 
+// Modo demo: convierte los pedidos guardados en el navegador a líneas con el mismo
+// formato que devuelve /api/reservas/mis-reservas (una línea por producto, ITBIS 18%)
+const ITBIS = 0.18;
+const pedidosDemoComoReservas = (): Reserva[] =>
+  leerPedidosDemo().flatMap((p, iPedido) => p.productos.map((prod, iProd) => {
+    const subtotal = prod.precioUnitario * prod.cantidad;
+    const itbis = subtotal * ITBIS;
+    return {
+      idApartado: -(iPedido * 1000 + iProd + 1),
+      producto: prod.nombre,
+      cantidad: prod.cantidad,
+      precioUnitario: prod.precioUnitario,
+      subtotal, itbis, total: subtotal + itbis,
+      sucursal: SUCURSALES_DEMO.find(s => s.idSucursal === p.idSucursal)?.nombre ?? 'AuraSpa Principal',
+      estado: p.estado ?? 'Pendiente',
+      fechaReserva: p.creado,
+      notas: p.notas || undefined,
+      referencia: p.referencia,
+    };
+  }));
+
 const MisReservas: React.FC = () => {
   const navigate = useNavigate();
+  const { isDemo } = useAuth();
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,6 +94,12 @@ const MisReservas: React.FC = () => {
   const fetchReservas = async () => {
     setLoading(true);
     setError('');
+    // Modo demo: los pedidos viven solo en este navegador
+    if (isDemo) {
+      setReservas(pedidosDemoComoReservas());
+      setLoading(false);
+      return;
+    }
     try {
       const res = await apiClient.get('/api/reservas/mis-reservas');
       setReservas(res.data);
@@ -89,6 +120,15 @@ const MisReservas: React.FC = () => {
     if (!confirmCancelar) return;
     setCancelando(true);
     setCancelError('');
+    // Modo demo: se cancela el pedido guardado en el navegador
+    if (isDemo) {
+      const referencia = confirmCancelar.items[0]?.referencia;
+      if (referencia) actualizarPedidoDemo(referencia, { estado: 'Cancelado' });
+      setReservas(pedidosDemoComoReservas());
+      setConfirmCancelar(null);
+      setCancelando(false);
+      return;
+    }
     try {
       await Promise.all(confirmCancelar.items.map(i => apiClient.put(`/api/reservas/${i.idApartado}/cancelar`)));
       await fetchReservas();
@@ -158,6 +198,9 @@ const MisReservas: React.FC = () => {
                     <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--aura-gray)', fontSize: '0.85rem' }}><MapPin size={14} />{orden.sucursal}</span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--aura-gray)', fontSize: '0.85rem' }}><Calendar size={14} />{formatFecha(orden.fechaReserva)}</span>
+                      {orden.items[0]?.referencia && (
+                        <span style={{ color: 'var(--aura-gray)', fontSize: '0.85rem' }}>Ref. {orden.items[0].referencia}</span>
+                      )}
                     </div>
                   </div>
                   {orden.estado === 'Pendiente' && (

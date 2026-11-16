@@ -68,6 +68,7 @@ export const horasOcupadasDemo = (idEmpleado: number, fecha: string) =>
 // ── Pedidos demo ───────────────────────────────────────────────────
 export interface PedidoDemo {
   referencia: string;
+  estado?: 'Pendiente' | 'Cancelado';
   idSucursal: number;
   notas: string;
   productos: { idItem: number; nombre: string; cantidad: number; precioUnitario: number }[];
@@ -75,7 +76,13 @@ export interface PedidoDemo {
   creado: string;
 }
 
-export const guardarPedidoDemo = (pedido: PedidoDemo) => escribir(CLAVE_PEDIDOS, [...leer<PedidoDemo>(CLAVE_PEDIDOS), pedido]);
+export const leerPedidosDemo = () => leer<PedidoDemo>(CLAVE_PEDIDOS);
+
+export const guardarPedidoDemo = (pedido: PedidoDemo) =>
+  escribir(CLAVE_PEDIDOS, [...leerPedidosDemo(), { ...pedido, estado: 'Pendiente' }]);
+
+export const actualizarPedidoDemo = (referencia: string, cambios: Partial<Pick<PedidoDemo, 'estado'>>) =>
+  escribir(CLAVE_PEDIDOS, leerPedidosDemo().map(p => p.referencia === referencia ? { ...p, ...cambios } : p));
 
 export const limpiarDatosDemo = () => {
   try { localStorage.removeItem(CLAVE_CITAS); localStorage.removeItem(CLAVE_PEDIDOS); } catch { /* sin acceso */ }
