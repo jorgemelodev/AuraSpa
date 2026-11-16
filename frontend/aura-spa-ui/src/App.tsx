@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
@@ -34,6 +34,7 @@ import AuroraKiosk from './components/aurora/AuroraKiosk';
 import CoreFaceGate from './components/aurora/CoreFaceGate';
 import CheckinCliente from './pages/CheckinCliente';
 import ReservasStaff from './pages/ReservasStaff';
+import { BannerModoDemo } from './components/AccesoDemo';
 
 // ── Pantalla de acceso denegado ──────────────────────────────
 const AccesoDenegado: React.FC<{ mensaje?: string }> = ({ mensaje }) => {
@@ -60,6 +61,7 @@ const PrivateRoute: React.FC<{
   denyMessage?: string;
 }> = ({ children, roles, denyRoles, denyMessage }) => {
   const { user, isAuthenticated, loading } = useAuth();
+  const location = useLocation();
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--aura-beige)' }}>
@@ -67,7 +69,8 @@ const PrivateRoute: React.FC<{
       </div>
     );
   }
-  if (!isAuthenticated) return <Navigate to="/login" />;
+  // Se guarda la ruta de origen para que "Entrar como Cliente Demo" vuelva a ella
+  if (!isAuthenticated) return <Navigate to="/login" state={{ from: location.pathname + location.search }} />;
   if (denyRoles && denyRoles.includes(user?.perfil || ''))
     return <AccesoDenegado mensaje={denyMessage} />;
   if (roles && !roles.includes(user?.perfil || ''))
@@ -80,6 +83,7 @@ function App() {
   return (
     <AuthProvider>
       <Router>
+        <BannerModoDemo />
         <RecepcionAlertas />
         <AuroraKiosk />
         <Routes>

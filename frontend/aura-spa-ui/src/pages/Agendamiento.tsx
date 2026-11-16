@@ -4,6 +4,9 @@ import { Loader2 } from 'lucide-react';
 import apiClient from '../services/apiClient';
 import { HORAS_SPA, formatHora12, horaFueraDeHorarioDomingo } from '../utils/horasSpa';
 import SelectorFecha from '../components/SelectorFecha';
+import { useAuth } from '../context/AuthContext';
+import { CATALOGO_DEMO } from '../data/catalogoDemo';
+import { SUCURSALES_DEMO, ESPECIALISTAS_DEMO, guardarCitaDemo, horasOcupadasDemo } from '../utils/demo';
 
 type CategoriaServicio = 'Facial' | 'Masaje' | 'Depilación' | 'Cejas y Pestañas' | 'Uñas' | 'Pelo' | '';
 
@@ -83,6 +86,7 @@ const horaPasada = (fecha: string, hora: string) => {
 const Agendamiento: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { isDemo } = useAuth();
 
   const mapearCategoria = (cat: string): CategoriaServicio => {
     const mapa: Record<string, CategoriaServicio> = {
@@ -195,7 +199,14 @@ const Agendamiento: React.FC = () => {
         // Provisional hasta que el usuario elija un "tipo" concreto (o si esa
         // categoría no tiene un mapeo definido) — se corrige en el efecto de abajo.
         if (!idServicio && filtered.length > 0) setIdServicio(String(filtered[0].id));
-      }).catch(() => {});
+      }).catch(() => {
+        // API no disponible: servicios del catálogo de respaldo
+        const filtered = CATALOGO_DEMO
+          .filter(s => s.tipo === 'Servicio' && mapearCategoria(s.categoria ?? '') === categoria)
+          .map(s => ({ id: s.id, nombre: s.nombre, categoria: s.categoria }));
+        setServicios(filtered);
+        if (!idServicio && filtered.length > 0) setIdServicio(String(filtered[0].id));
+      });
     }
   }, [categoria]);
 
@@ -234,7 +245,11 @@ const Agendamiento: React.FC = () => {
       res.data = res.data.filter((e: any) => !e.tipoEmpleado || e.tipoEmpleado === 'Especialista' || e.tipo === 'Especialista');
       setEspecialistas(res.data);
       setIdEspecialista('');
-    }).catch(() => {});
+    }).catch(() => {
+      // API no disponible: especialistas del seed que atienden esta categoría
+      setEspecialistas(ESPECIALISTAS_DEMO.filter(e => e.categorias.includes(categoria)));
+      setIdEspecialista('');
+    });
   }, [categoria, idSucursal]);
 
   // Días no laborables configurados por administración (feriados, cierres)
@@ -252,6 +267,8 @@ const Agendamiento: React.FC = () => {
   useEffect(() => {
     setHorasOcupadas([]);
     if (!idEspecialista || !fecha) return;
+    // Sesión demo: la disponibilidad sale de las citas demo guardadas en este navegador
+    if (isDemo) { setHorasOcupadas(horasOcupadasDemo(parseInt(idEspecialista), fecha)); return; }
     apiClient.get(`/api/citas/disponibilidad?idEmpleado=${idEspecialista}&fecha=${fecha}`).then(res => {
       setHorasOcupadas(res.data);
     }).catch(() => setHorasOcupadas([]));
@@ -267,7 +284,11 @@ const Agendamiento: React.FC = () => {
       const lista = res.data.map((s: any) => ({ idSucursal: s.idSucursal, nombre: s.nombre }));
       setSucursales(lista);
       if (lista.length > 0) setIdSucursal(String(lista[0].idSucursal));
-    }).catch(() => {});
+    }).catch(() => {
+      // API no disponible: sucursal del seed
+      setSucursales(SUCURSALES_DEMO);
+      setIdSucursal(String(SUCURSALES_DEMO[0].idSucursal));
+    });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -288,6 +309,33 @@ const Agendamiento: React.FC = () => {
     setError('');
 
     const fechaHora = `${fecha}T${hora}:00`;
+
+    const estadoConfirmacion = (referencia: string) => ({
+      servicio: servicios.find(s => String(s.id) === idServicio)?.nombre ?? categoria,
+      fecha: new Date(`${fecha}T${hora}`).toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }),
+      hora: new Date(`${fecha}T${hora}`).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }),
+      especialista: especialistas.find(e => String(e.idEmpleado) === idEspecialista)?.nombreCompleto ?? 'Sin preferencia',
+      referencia,
+      fechaSolicitud: new Date().toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }),
+    });
+
+    // Sesión demo: la cita se guarda solo en este navegador, sin llamar a la API
+    if (isDemo) {
+      const confirmacion = estadoConfirmacion(`AURA-DEMO-${Math.floor(Math.random() * 9000) + 1000}`);
+      guardarCitaDemo({
+        referencia: confirmacion.referencia,
+        idItem: parseInt(idServicio) || 1,
+        servicio: confirmacion.servicio,
+        idSucursal: parseInt(idSucursal),
+        idEmpleado: idEspecialista ? parseInt(idEspecialista) : null,
+        especialista: confirmacion.especialista,
+        fecha, hora,
+        creada: new Date().toISOString(),
+      });
+      setLoading(false);
+      navigate('/cita-confirmada', { state: confirmacion });
+      return;
+    }
 
     try {
       await apiClient.post('/api/citas', {
@@ -310,14 +358,7 @@ const Agendamiento: React.FC = () => {
       });
 
       navigate('/cita-confirmada', {
-        state: {
-          servicio: servicios.find(s => String(s.id) === idServicio)?.nombre ?? categoria,
-          fecha: new Date(`${fecha}T${hora}`).toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }),
-          hora: new Date(`${fecha}T${hora}`).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }),
-          especialista: especialistas.find(e => String(e.idEmpleado) === idEspecialista)?.nombreCompleto ?? 'Sin preferencia',
-          referencia: `AURA-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000) + 1000}`,
-          fechaSolicitud: new Date().toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }),
-        }
+        state: estadoConfirmacion(`AURA-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000) + 1000}`)
       });
     } catch (err: any) {
       const msg = err.response?.data;

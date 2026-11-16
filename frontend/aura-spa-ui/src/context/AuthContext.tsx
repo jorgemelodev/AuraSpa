@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { DEMO_TOKEN, DEMO_USER, esTokenDemo, limpiarDatosDemo } from '../utils/demo';
 
 interface User {
   id: number;
@@ -21,6 +22,10 @@ interface AuthContextType {
   token: string | null;
   login: (token: string, user: User) => void;
   logout: () => void;
+  /** Inicia una sesión simulada de cliente (solo frontend, sin backend). */
+  loginDemo: () => void;
+  /** true si la sesión actual es la de "Acceso Demo". */
+  isDemo: boolean;
   isAuthenticated: boolean;
   loading: boolean;
 }
@@ -49,7 +54,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('aura_token', newToken);
   };
 
+  const loginDemo = () => {
+    sessionStorage.setItem('aura_cerro_sesion', '0');
+    login(DEMO_TOKEN, DEMO_USER);
+  };
+
   const logout = () => {
+    if (esTokenDemo(token)) limpiarDatosDemo();
     setUser(null);
     setToken(null);
     localStorage.removeItem('aura_user');
@@ -61,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token, loading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, loginDemo, isDemo: esTokenDemo(token), isAuthenticated: !!token, loading }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, User, CheckCircle, XCircle, AlertCircle, Search, Loader2 } from 'lucide-react';
+import { Calendar, User, CheckCircle, XCircle, AlertCircle, Search, Loader2 } from 'lucide-react';
 import apiClient from '../services/apiClient';
 
 interface Cita {

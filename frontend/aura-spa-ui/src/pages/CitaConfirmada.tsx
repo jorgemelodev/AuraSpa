@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 const CitaConfirmada: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
 
   const cita = location.state ?? {
     servicio: 'Servicio no especificado',
@@ -71,13 +71,22 @@ const CitaConfirmada: React.FC = () => {
         </div>
 
         <div style={{ background: '#f0ecff', border: '1px solid var(--aura-lavender)', borderRadius: '20px', padding: '18px 25px', marginBottom: '30px', display: 'flex', alignItems: 'flex-start', gap: '14px', textAlign: 'left' }}>
-  <span style={{ fontSize: '1.4rem' }}>📩</span>
+  <span style={{ fontSize: '1.4rem' }}>{isDemo ? '🧪' : '📩'}</span>
+  {isDemo ? (
+    <div>
+      <p style={{ fontWeight: '700', color: 'var(--aura-navy)', margin: '0 0 4px', fontSize: '0.9rem', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>Cita de demostración</p>
+      <p style={{ color: 'var(--aura-gray)', margin: 0, fontSize: '0.83rem', lineHeight: '1.5' }}>
+        Estás en modo demo: la cita se guardó solo en este navegador (referencia <strong>{cita.referencia}</strong>) y no se envió ningún correo.
+      </p>
+    </div>
+  ) : (
   <div>
     <p style={{ fontWeight: '700', color: 'var(--aura-navy)', margin: '0 0 4px', fontSize: '0.9rem', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>Revisa tu correo electrónico</p>
     <p style={{ color: 'var(--aura-gray)', margin: 0, fontSize: '0.83rem', lineHeight: '1.5' }}>
       Te enviamos un resumen de tu solicitud a <strong>{user?.email}</strong>. Una vez que el spa confirme tu cita, recibirás otro correo con el comprobante oficial.
     </p>
   </div>
+  )}
 </div>
 
         <button className="btn-AuraSpa" onClick={() => navigate('/catalog')} style={{ width: '100%', padding: '15px', fontSize: '1rem', marginBottom: '12px' }}>

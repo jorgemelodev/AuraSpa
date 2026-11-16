@@ -1,12 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import apiClient from '../services/apiClient';
+import { BotonDemo, NotaDemo } from '../components/AccesoDemo';
+import { useApiDisponible } from '../services/apiDisponible';
 
 const Login: React.FC = () => {
   const navigate   = useNavigate();
+  const location   = useLocation();
   const { login }  = useAuth();
+  // El acceso demo solo se ofrece cuando el backend no responde (p. ej. en Vercel)
+  const apiDisponible = useApiDisponible();
+  // Ruta protegida desde la que se redirigió aquí (p. ej. /agendamiento o /carrito)
+  const desde = (location.state as { from?: string } | null)?.from;
 
   // "Bienvenida de nuevo" SOLO si cerró sesión en esta misma sesión del navegador
   // Si llegó aquí por primera vez (tab nuevo / navegador nuevo) → "Bienvenida"
@@ -75,6 +82,12 @@ const Login: React.FC = () => {
           {yaEntroAntes ? 'Nos alegra verte otra vez.' : 'Tu oasis te espera.'}
         </p>
 
+        {desde && (
+          <div style={{ background:'#f8f6ff', color:'var(--aura-navy)', padding:'12px 14px', borderRadius:'14px', marginBottom:'20px', textAlign:'center', fontSize:'0.86rem' }}>
+            Inicia sesión para continuar con tu {desde.startsWith('/carrito') ? 'compra' : 'reserva'}.
+          </div>
+        )}
+
         {error && (
           <div style={{ background:'#ffebee', color:'#c62828', padding:'14px', borderRadius:'14px', marginBottom:'20px', textAlign:'center', fontSize:'0.9rem' }}>
             {error}
@@ -115,6 +128,16 @@ const Login: React.FC = () => {
             {loading ? <Loader2 className="animate-spin" size={22} style={{ margin:'0 auto', display:'block' }}/> : 'Iniciar Sesión'}
           </button>
         </form>
+
+        {apiDisponible === false && (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:'12px', margin:'22px 0 16px', color:'#bbb', fontSize:'0.8rem' }}>
+              <span style={{ flex:1, height:'1px', background:'#eee' }} /> o <span style={{ flex:1, height:'1px', background:'#eee' }} />
+            </div>
+            <BotonDemo destino={desde ?? '/catalog'} />
+            <NotaDemo />
+          </>
+        )}
 
         <p style={{ textAlign:'center', marginTop:'25px', color:'var(--aura-gray)', fontSize:'0.9rem' }}>
           ¿No tienes una cuenta?{' '}

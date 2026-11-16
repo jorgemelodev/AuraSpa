@@ -7,7 +7,7 @@ import apiClient from '../services/apiClient';
 
 
 const Navbar: React.FC = () => {
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, isDemo } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [noLeidas, setNoLeidas] = useState(0);
@@ -43,6 +43,12 @@ const Navbar: React.FC = () => {
                 <span style={{ fontWeight:'bold', color:'var(--aura-navy)', fontSize:'0.9rem' }}>
                   Hola, {user?.nombre}
                 </span>
+                {isDemo && (
+                  <span title="Sesión simulada: las citas y compras solo se guardan en este navegador"
+                    style={{ background:'#f0ecff', color:'var(--aura-lavender-dark, #6B5B93)', border:'1px dashed var(--aura-lavender)', borderRadius:'20px', padding:'3px 10px', fontSize:'0.72rem', fontWeight:700 }}>
+                    Modo demo
+                  </span>
+                )}
 
                 {/* Notificaciones — todos los usuarios autenticados */}
                 <button

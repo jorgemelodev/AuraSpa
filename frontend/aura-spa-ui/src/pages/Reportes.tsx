@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { BarChart2, Users, Calendar, DollarSign, Star, Download, Loader2 } from 'lucide-react';
+import { Users, Calendar, DollarSign, Star, Download, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import apiClient from '../services/apiClient';
 import jsPDF from 'jspdf';
@@ -222,7 +222,7 @@ const Reportes: React.FC = () => {
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie data={data.citasPorCategoria.map((c: any) => ({ name: c.categoria, value: c.cantidad }))}
-                      cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                      cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}>
                       {data.citasPorCategoria.map((_: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORES[index % COLORES.length]} />
                       ))}

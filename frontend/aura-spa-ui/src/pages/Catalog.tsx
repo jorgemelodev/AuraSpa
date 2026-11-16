@@ -5,6 +5,8 @@ import { useAuth, saludoGenero } from '../context/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import apiClient from '../services/apiClient';
 import { CATALOGO_DEMO, CATEGORIAS_DEMO } from '../data/catalogoDemo';
+import { ModalAccesoRequerido } from '../components/AccesoDemo';
+import { useApiDisponible } from '../services/apiDisponible';
 
 interface CatalogItem {
   id: number; nombre: string; descripcion: string; precio: number;
@@ -32,9 +34,6 @@ const CardImagen: React.FC<{ src: string; alt: string; tipo: string }> = ({ src,
 const normalizeText =(s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 const Catalog: React.FC = () => {
-  const [carritoCount, setCarritoCount] = useState<number>(() => {
-    try { return JSON.parse(localStorage.getItem('aura_carrito')||'[]').reduce((a:number,p:any)=>a+p.cantidad,0); } catch { return 0; }
-  });
   const [toast, setToast] = useState<string | null>(null);
 
   const agregarAlCarrito = (item: any) => {
@@ -46,7 +45,6 @@ const Catalog: React.FC = () => {
       carrito.push({ id:item.id, nombre:item.nombre, precio:item.precio, cantidad:1, imagenUrl:item.imagenUrl });
     }
     localStorage.setItem('aura_carrito', JSON.stringify(carrito));
-    setCarritoCount(carrito.reduce((a:number,p:any)=>a+p.cantidad,0));
     setToast(`🛍️ ${item.nombre} agregado al carrito`);
   };
 
@@ -66,14 +64,18 @@ const Catalog: React.FC = () => {
   const [categoria,  setCategoria]  = useState('Todos');
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
-  const [modoDemo,   setModoDemo]   = useState(false);
+  // Sin sesión: al reservar/comprar se ofrece iniciar sesión o entrar como Cliente Demo
+  const [accesoRequerido, setAccesoRequerido] = useState<{ mensaje: string; destino: string } | null>(null);
   const { user } = useAuth();
+  // Sin backend (p. ej. en Vercel) se ofrece el acceso demo al reservar/comprar sin sesión
+  const apiDisponible = useApiDisponible();
+  const ofrecerDemo = !user && apiDisponible === false;
   const navigate = useNavigate();
 
   const esCliente = !user || user.perfil === 'Cliente';
 
   useEffect(() => {
-    setLoading(true); setError(''); setModoDemo(false);
+    setLoading(true); setError('');
 
     const cargarCatalogo = async () => {
       // Si hay sesión, filtramos por la sucursal del cliente (por ahora, la única sucursal activa)
@@ -108,7 +110,6 @@ const Catalog: React.FC = () => {
         // API no disponible: se muestra el catálogo de demostración en lugar del error
         setItems(CATALOGO_DEMO);
         setCategorias(['Todos', ...CATEGORIAS_DEMO]);
-        setModoDemo(true);
       } finally {
         setLoading(false);
       }
@@ -129,8 +130,11 @@ const Catalog: React.FC = () => {
     if (item.tipo === 'Producto') {
       if (item.stock === 0) return;
       agregarAlCarrito(item);
+      if (ofrecerDemo) setAccesoRequerido({ mensaje: `Agregamos ${item.nombre} a tu carrito. Inicia sesión para finalizar la compra.`, destino: '/carrito' });
     } else {
-      navigate(`/agendamiento?itemId=${item.id}&categoria=${item.categoria}`);
+      const destino = `/agendamiento?itemId=${item.id}&categoria=${encodeURIComponent(item.categoria ?? '')}`;
+      if (ofrecerDemo) { setAccesoRequerido({ mensaje: `Para agendar ${item.nombre} necesitas una cuenta de cliente.`, destino }); return; }
+      navigate(destino);
     }
   };
 
@@ -193,11 +197,6 @@ const Catalog: React.FC = () => {
 
       {loading && <p style={{ textAlign: 'center', color: 'var(--aura-gray)', padding: '60px' }}>Cargando catálogo...</p>}
       {error && <p style={{ textAlign: 'center', color: '#c62828', padding: '40px', background: '#ffebee', borderRadius: '20px' }}>{error}</p>}
-      {!loading && modoDemo && (
-        <p style={{ textAlign: 'center', color: 'var(--aura-gray)', fontSize: '0.8rem', margin: '0 0 20px' }}>
-          Mostrando catálogo de demostración.
-        </p>
-      )}
 
       {!loading && !error && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '25px' }}>
@@ -291,6 +290,11 @@ const Catalog: React.FC = () => {
             </div>
           ))}
         </div>
+      )}
+
+      {accesoRequerido && (
+        <ModalAccesoRequerido mensaje={accesoRequerido.mensaje} destino={accesoRequerido.destino}
+          onCerrar={() => setAccesoRequerido(null)} />
       )}
 
       {toast && createPortal(

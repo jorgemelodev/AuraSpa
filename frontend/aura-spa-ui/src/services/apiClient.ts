@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { esTokenDemo } from '../utils/demo';
 
 const apiClient = axios.create({
   baseURL: (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:5036',
@@ -7,14 +8,16 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('aura_token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  // La sesión demo es solo de frontend: su token no se envía nunca al backend.
+  if (token && !esTokenDemo(token)) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 apiClient.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401) {
+    // Con sesión demo, un 401 es esperable (no hay token real): no se cierra la sesión.
+    if (error.response?.status === 401 && !esTokenDemo(localStorage.getItem('aura_token'))) {
       const habiaSesion = !!localStorage.getItem('aura_token');
       localStorage.removeItem('aura_token');
       localStorage.removeItem('aura_user');

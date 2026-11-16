@@ -4,6 +4,7 @@ import { ShoppingCart, ShoppingBag, Trash2, Plus, Minus, MapPin, CheckCircle, Ar
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../services/apiClient';
 import jsPDF from 'jspdf';
+import { SUCURSALES_DEMO, guardarPedidoDemo } from '../utils/demo';
 
 interface ProductoItem {
   id: number;
@@ -15,7 +16,7 @@ interface ProductoItem {
 
 const CarritoProductos: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
   const [carrito, setCarrito] = useState<ProductoItem[]>(() => {
     try { return JSON.parse(localStorage.getItem('aura_carrito') || '[]'); } catch { return []; }
   });
@@ -28,7 +29,11 @@ const CarritoProductos: React.FC = () => {
       const lista = res.data.map((s: any) => ({ idSucursal: s.idSucursal, nombre: s.nombre }));
       setSucursales(lista);
       if (lista.length > 0) { setSucursal(lista[0].nombre); setIdSucursal(lista[0].idSucursal); }
-    }).catch(() => {});
+    }).catch(() => {
+      // API no disponible: sucursal del seed
+      setSucursales(SUCURSALES_DEMO);
+      setSucursal(SUCURSALES_DEMO[0].nombre); setIdSucursal(SUCURSALES_DEMO[0].idSucursal);
+    });
   }, []);
   const [reservado,  setReservado]  = useState(false);
   const [procesando, setProcesando] = useState(false);
@@ -59,9 +64,42 @@ const CarritoProductos: React.FC = () => {
   const total    = carrito.reduce((a,p) => a + p.precio * p.cantidad, 0);
   const itbis    = carrito.reduce((a,p) => a + p.precio * p.cantidad * 0.18, 0);
 
+  // Muestra la confirmación y vacía el carrito (común al flujo real y al demo)
+  const completarReserva = () => {
+    // Guardar snapshot para el PDF antes de limpiar
+    const snapData  = [...carrito];
+    const snapTotal = carrito.reduce((a,p)=>a+p.precio*p.cantidad,0);
+    const snapItbis = carrito.reduce((a,p)=>a+p.precio*p.cantidad*0.18,0);
+    // Guardar en ref (sincrónico) Y en estado (para re-render)
+    snapshotRef.current = snapData;
+    totalRef.current    = snapTotal;
+    itbisRef.current    = snapItbis;
+    setCarritoSnapshot(snapData);
+    setTotalSnapshot(snapTotal);
+    setItbisSnapshot(snapItbis);
+    setReservado(true);
+    localStorage.removeItem('aura_carrito');
+    setCarrito([]);
+  };
+
   const reservar = async () => {
     if (carrito.length === 0 || !idSucursal) return;
     setProcesando(true);
+
+    // Sesión demo: el pedido se guarda solo en este navegador, sin llamar a la API
+    if (isDemo) {
+      guardarPedidoDemo({
+        referencia: `RES-DEMO-${String(Date.now()).slice(-6)}`,
+        idSucursal, notas,
+        productos: carrito.map(p => ({ idItem: p.id, nombre: p.nombre, cantidad: p.cantidad, precioUnitario: p.precio })),
+        total: total + itbis,
+        creado: new Date().toISOString(),
+      });
+      completarReserva();
+      setProcesando(false);
+      return;
+    }
+
     try {
       await apiClient.post('/api/reservas', {
         idSucursal,
@@ -70,20 +108,7 @@ const CarritoProductos: React.FC = () => {
       });
       // Otorga los puntos de lealtad por el monto reservado (independiente del registro de la orden).
       await apiClient.post('/api/lealtad/reservar-productos', { montoTotal: total + itbis });
-      // Guardar snapshot para el PDF antes de limpiar
-      const snapData  = [...carrito];
-      const snapTotal = carrito.reduce((a,p)=>a+p.precio*p.cantidad,0);
-      const snapItbis = carrito.reduce((a,p)=>a+p.precio*p.cantidad*0.18,0);
-      // Guardar en ref (sincrónico) Y en estado (para re-render)
-      snapshotRef.current = snapData;
-      totalRef.current    = snapTotal;
-      itbisRef.current    = snapItbis;
-      setCarritoSnapshot(snapData);
-      setTotalSnapshot(snapTotal);
-      setItbisSnapshot(carrito.reduce((a,p)=>a+p.precio*p.cantidad*0.18,0));
-      setReservado(true);
-      localStorage.removeItem('aura_carrito');
-      setCarrito([]);
+      completarReserva();
     } catch {
       alert('Error al procesar la reserva. Intenta de nuevo.');
     } finally { setProcesando(false); }

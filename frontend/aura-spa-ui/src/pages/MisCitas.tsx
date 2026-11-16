@@ -7,6 +7,8 @@ import jsPDF from 'jspdf';
 import { getLogoBase64 } from '../utils/pdfLogo';
 import { HORAS_SPA, formatHora12, horaFueraDeHorarioDomingo } from '../utils/horasSpa';
 import SelectorFecha from '../components/SelectorFecha';
+import { CATALOGO_DEMO } from '../data/catalogoDemo';
+import { SUCURSALES_DEMO, leerCitasDemo, actualizarCitaDemo, horasOcupadasDemo } from '../utils/demo';
 
 interface Cita {
   idCita: number;
@@ -41,9 +43,25 @@ const estadoConfig: Record<string, { color: string; bg: string; icono: React.Rea
   Rechazada:  { color: '#ef4444', bg: '#fef2f2', icono: <XCircle size={14} />,     label: 'Rechazada' },
 };
 
+// Modo demo: convierte las citas guardadas en el navegador al formato de la API
+const citasDemoComoCitas = (): Cita[] => leerCitasDemo().map(c => {
+  const item = CATALOGO_DEMO.find(i => i.id === c.idItem);
+  return {
+    idCita: c.id,
+    servicio: c.servicio,
+    categoria: item?.categoria ?? '',
+    especialista: c.especialista,
+    idEmpleado: c.idEmpleado,
+    sucursal: SUCURSALES_DEMO.find(s => s.idSucursal === c.idSucursal)?.nombre ?? 'AuraSpa Principal',
+    fechaHora: `${c.fecha}T${c.hora}:00`,
+    estado: c.estado ?? 'Pendiente',
+    precioAcordado: item?.precio,
+  };
+}).sort((a, b) => b.fechaHora.localeCompare(a.fechaHora));
+
 const MisCitas: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
   const [citas, setCitas] = useState<Cita[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -83,6 +101,10 @@ const MisCitas: React.FC = () => {
     setHorasOcupadasReprogramar([]);
     const cita = citas.find(c => c.idCita === reprogramarModal);
     if (!cita?.idEmpleado || !nuevaFecha) return;
+    if (isDemo) {
+      setHorasOcupadasReprogramar(horasOcupadasDemo(cita.idEmpleado, nuevaFecha).filter(h => `${nuevaFecha}T${h}:00` !== cita.fechaHora));
+      return;
+    }
     apiClient.get(`/api/citas/disponibilidad?idEmpleado=${cita.idEmpleado}&fecha=${nuevaFecha}`)
       .then(res => setHorasOcupadasReprogramar(res.data))
       .catch(() => setHorasOcupadasReprogramar([]));
@@ -96,6 +118,12 @@ const MisCitas: React.FC = () => {
   const fetchCitas = async () => {
     setLoading(true);
     setError('');
+    // Modo demo: las citas viven solo en este navegador
+    if (isDemo) {
+      setCitas(citasDemoComoCitas());
+      setLoading(false);
+      return;
+    }
     try {
       const res = await apiClient.get('/api/citas/mis-citas');
       setCitas(res.data);
@@ -121,6 +149,20 @@ const MisCitas: React.FC = () => {
     setCancelando(idCita);
     setCancelError(prev => ({ ...prev, [idCita]: '' }));
     setCancelBloqueado72h(prev => ({ ...prev, [idCita]: false }));
+    // Modo demo: misma regla de 72h que aplica el backend, pero en local
+    if (isDemo) {
+      const cita = citas.find(c => c.idCita === idCita);
+      const tiempoRestante = cita ? calcularTiempoParaCancelar(cita.fechaHora) : null;
+      if (tiempoRestante) {
+        setCancelError(prev => ({ ...prev, [idCita]: tiempoRestante }));
+        setCancelBloqueado72h(prev => ({ ...prev, [idCita]: true }));
+      } else {
+        actualizarCitaDemo(idCita, { estado: 'Cancelada' });
+        setCitas(prev => prev.map(c => c.idCita === idCita ? { ...c, estado: 'Cancelada' } : c));
+      }
+      setCancelando(null);
+      return;
+    }
     try {
       await apiClient.put(`/api/citas/${idCita}/cancelar`);
       setCitas(prev => prev.map(c => c.idCita === idCita ? { ...c, estado: 'Cancelada' } : c));
@@ -162,8 +204,14 @@ const MisCitas: React.FC = () => {
     setReprogramarError('');
     try {
       const fechaHora = `${nuevaFecha}T${nuevaHora}:00`;
-      const res = await apiClient.put(`/api/citas/${reprogramarModal}/reprogramar`, { fechaHora });
-      setCitas(prev => prev.map(c => c.idCita === reprogramarModal ? { ...c, fechaHora: res.data.fechaHora } : c));
+      if (isDemo) {
+        // Modo demo: se actualiza la cita guardada en el navegador
+        actualizarCitaDemo(reprogramarModal, { fecha: nuevaFecha, hora: nuevaHora });
+        setCitas(prev => prev.map(c => c.idCita === reprogramarModal ? { ...c, fechaHora } : c));
+      } else {
+        const res = await apiClient.put(`/api/citas/${reprogramarModal}/reprogramar`, { fechaHora });
+        setCitas(prev => prev.map(c => c.idCita === reprogramarModal ? { ...c, fechaHora: res.data.fechaHora } : c));
+      }
       setReprogramarExito(true);
       setTimeout(() => {
         setReprogramarModal(null);
