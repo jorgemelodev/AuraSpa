@@ -4,6 +4,7 @@ import { Search, ShoppingCart, Sparkles, Package, Lock, Clock } from 'lucide-rea
 import { useAuth, saludoGenero } from '../context/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import apiClient from '../services/apiClient';
+import { CATALOGO_DEMO, CATEGORIAS_DEMO } from '../data/catalogoDemo';
 
 interface CatalogItem {
   id: number; nombre: string; descripcion: string; precio: number;
@@ -11,7 +12,24 @@ interface CatalogItem {
   duracionMinutos?: number; categoria?: string;
 }
 
-const normalizeText = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+// Imagen de tarjeta: si no hay URL o la carga falla, muestra un placeholder limpio
+const CardImagen: React.FC<{ src: string; alt: string; tipo: string }> = ({ src, alt, tipo }) => {
+  const [fallo, setFallo] = useState(false);
+  if (!src || fallo) {
+    return (
+      <div role="img" aria-label={alt} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f0ecff, #e8e0f5)' }}>
+        {tipo === 'Producto' ? <Package size={40} color="var(--aura-lavender)" /> : <Sparkles size={40} color="var(--aura-lavender)" />}
+      </div>
+    );
+  }
+  return (
+    <img src={src} alt={alt} loading="lazy"
+      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+      onError={() => setFallo(true)} />
+  );
+};
+
+const normalizeText =(s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 const Catalog: React.FC = () => {
   const [carritoCount, setCarritoCount] = useState<number>(() => {
@@ -48,13 +66,14 @@ const Catalog: React.FC = () => {
   const [categoria,  setCategoria]  = useState('Todos');
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
+  const [modoDemo,   setModoDemo]   = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
 
   const esCliente = !user || user.perfil === 'Cliente';
 
   useEffect(() => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setModoDemo(false);
 
     const cargarCatalogo = async () => {
       // Si hay sesión, filtramos por la sucursal del cliente (por ahora, la única sucursal activa)
@@ -86,7 +105,10 @@ const Catalog: React.FC = () => {
         setItems([...servicios, ...productos]);
         setCategorias(['Todos', ...catRes.data.map((c: any) => c.nombre)]);
       } catch {
-        setError('No se pudo cargar el catálogo. Verifica que el servidor esté activo.');
+        // API no disponible: se muestra el catálogo de demostración en lugar del error
+        setItems(CATALOGO_DEMO);
+        setCategorias(['Todos', ...CATEGORIAS_DEMO]);
+        setModoDemo(true);
       } finally {
         setLoading(false);
       }
@@ -171,6 +193,11 @@ const Catalog: React.FC = () => {
 
       {loading && <p style={{ textAlign: 'center', color: 'var(--aura-gray)', padding: '60px' }}>Cargando catálogo...</p>}
       {error && <p style={{ textAlign: 'center', color: '#c62828', padding: '40px', background: '#ffebee', borderRadius: '20px' }}>{error}</p>}
+      {!loading && modoDemo && (
+        <p style={{ textAlign: 'center', color: 'var(--aura-gray)', fontSize: '0.8rem', margin: '0 0 20px' }}>
+          Mostrando catálogo de demostración.
+        </p>
+      )}
 
       {!loading && !error && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '25px' }}>
@@ -187,15 +214,7 @@ const Catalog: React.FC = () => {
             >
               {/* Imagen con overlays */}
               <div style={{ position: 'relative', height: '200px', background: '#f0ecff' }}>
-                {item.imagenUrl ? (
-                  <img src={item.imagenUrl} alt={item.nombre}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f0ecff, #e8e0f5)' }}>
-                    {filter === 'Servicio' ? <Sparkles size={40} color="var(--aura-lavender)" /> : <Package size={40} color="var(--aura-lavender)" />}
-                  </div>
-                )}
+                <CardImagen src={item.imagenUrl} alt={item.nombre} tipo={item.tipo} />
 
                 {/* Badge categoría - esquina superior izquierda */}
                 {item.categoria && (
